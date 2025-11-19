@@ -14,6 +14,7 @@ UTG WinterIsCoding Ranking history
 * 2022 #10 (ex-eaquo #9)
 * 2023 #6
 * 2024 #2
+* 2025 ??
 
 2024 leaderboard:
 https://www.codingame.com/hackathon/unleash-the-geek-2024-m623/leaderboard/global
