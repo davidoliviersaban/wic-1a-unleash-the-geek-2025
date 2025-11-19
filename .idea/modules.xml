@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/../Google Code Jam/GoogleCodeJam.iml" filepath="$PROJECT_DIR$/../Google Code Jam/GoogleCodeJam.iml" />
+      <module fileurl="file://$PROJECT_DIR$/cg-cm-.iml" filepath="$PROJECT_DIR$/cg-cm-.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../CG CM CoIF/cg-cm-coif.iml" filepath="$PROJECT_DIR$/../CG CM CoIF/cg-cm-coif.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../CG CM Spring Challenge/cg-cm-spring-challenge.iml" filepath="$PROJECT_DIR$/../CG CM Spring Challenge/cg-cm-spring-challenge.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../CG Misc API/cg-misc-api.iml" filepath="$PROJECT_DIR$/../CG Misc API/cg-misc-api.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Orchard9/orchard9.iml" filepath="$PROJECT_DIR$/../Orchard9/orchard9.iml" />
+    </modules>
+  </component>
+</project>

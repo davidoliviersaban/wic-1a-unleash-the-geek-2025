@@ -1,0 +1,66 @@
+5f6ed2f Merge branch 'main' of https://github.com/davidoliviersaban/wic-1a-unleash-the-geek-2024 Christophe VALLET Mon Nov 18 15:37:17 2024 +0100
+829d100 adding selfie from matt Christophe VALLET Mon Nov 18 15:37:00 2024 +0100
+1eccb6e adding CG stats after only the rerun Christophe Vallet Sat Nov 16 10:15:02 2024 +0100
+acd97ca a happy modification of readme :) Christophe Vallet Fri Nov 15 22:45:03 2024 +0100
+00a56db adding cg stat screenshot after rerun Christophe Vallet Fri Nov 15 22:43:44 2024 +0100
+c1bec5d adding CG stats screenshot Christophe VALLET Fri Nov 15 15:48:01 2024 +0100
+348bf00 adding league behaviours Christophe VALLET Fri Nov 15 14:35:19 2024 +0100
+33fe61f adding pictures and rules Christophe VALLET Fri Nov 15 14:17:36 2024 +0100
+620efd3 Last push DOS Fri Nov 15 12:00:13 2024 +0100
+0910eae fix spore action DOS Fri Nov 15 11:23:31 2024 +0100
+08d1bd9 fix spore action DOS Fri Nov 15 11:12:16 2024 +0100
+d264b6e Wait DOS Fri Nov 15 11:04:19 2024 +0100
+598dd39 Merge branch 'main' of https://github.com/davidoliviersaban/wic-1a-unleash-the-geek-2024 Christophe VALLET Fri Nov 15 11:00:45 2024 +0100
+7b9c54b tentacle at distance 2 Christophe VALLET Fri Nov 15 11:00:36 2024 +0100
+d0e6e26 Sporers DOS Fri Nov 15 10:53:26 2024 +0100
+05acec0 ignore proteins for aggressive tentacles Christophe VALLET Fri Nov 15 10:22:58 2024 +0100
+87b8d09 multi root DOS Fri Nov 15 10:10:01 2024 +0100
+cd6e576 multi root DOS Fri Nov 15 10:04:36 2024 +0100
+53d1336 Prioritize tentacle attack DOS Fri Nov 15 09:31:07 2024 +0100
+0e70184 Fix NPE DOS Fri Nov 15 09:23:06 2024 +0100
+0dc8b31 Improved best tentacle direction DOS Fri Nov 15 09:18:10 2024 +0100
+7590846 Adding global unit tests DOS Fri Nov 15 08:12:06 2024 +0100
+806fa41 1pm commit... proposals for shooting coords and building sporers DOS Fri Nov 15 01:49:14 2024 +0100
+0139a4b Implementation for bestSporerDirection and bestHarvesterDirection DOS Fri Nov 15 00:48:31 2024 +0100
+bd14347 Merge branch 'main' of https://github.com/davidoliviersaban/wic-1a-unleash-the-geek-2024 Christophe VALLET Thu Nov 14 23:55:52 2024 +0100
+ee61ee9 bug in canbuildon Christophe VALLET Thu Nov 14 23:55:37 2024 +0100
+3457e43 Fix score compute DOS Thu Nov 14 23:53:15 2024 +0100
+25b0c60 Refactor logic to build random organs DOS Thu Nov 14 23:25:13 2024 +0100
+814f019 Refactor DOS Thu Nov 14 22:42:44 2024 +0100
+2d18b61 Refactor DOS Thu Nov 14 22:40:36 2024 +0100
+8c444ec Code clean 1 DOS Thu Nov 14 22:24:39 2024 +0100
+586ea1c fix bug in isProteinAlreadyHarvested Christophe VALLET Thu Nov 14 22:21:52 2024 +0100
+a46580f Add sporer at random position DOS Thu Nov 14 17:59:31 2024 +0100
+942fe40 prio tentacle on opponent Christophe VALLET Thu Nov 14 17:58:47 2024 +0100
+4b2551c removing random Christophe VALLET Thu Nov 14 17:45:32 2024 +0100
+bfcb6c6 build basic sporer when nothing else can be done Christophe VALLET Thu Nov 14 17:27:58 2024 +0100
+fac1e2a Make reusable global coords DOS Thu Nov 14 17:11:39 2024 +0100
+e5df716 bug in canbuildon Christophe VALLET Thu Nov 14 17:11:27 2024 +0100
+2cf98cd Beg of refactoring DOS Thu Nov 14 17:09:25 2024 +0100
+eac8afc avoiding to build in front of op tentacle Christophe VALLET Thu Nov 14 16:32:42 2024 +0100
+4f20831 merge Christophe VALLET Thu Nov 14 16:22:40 2024 +0100
+1e0f14e canbuild on Christophe VALLET Thu Nov 14 16:20:10 2024 +0100
+02d2b89 Adding voronoi with good time to compute DOS Thu Nov 14 16:07:42 2024 +0100
+fa4974f Adding voronoi logic DOS Thu Nov 14 16:01:06 2024 +0100
+6a76697 don't bulid tentacle before round 15 Christophe VALLET Thu Nov 14 15:47:49 2024 +0100
+9fde92b get best tentacle direction Christophe VALLET Thu Nov 14 14:59:06 2024 +0100
+93e8a50 random directions Christophe VALLET Thu Nov 14 14:29:07 2024 +0100
+ba8dcef couple of fix Christophe VALLET Thu Nov 14 14:13:15 2024 +0100
+55aae70 fixing stuff Christophe VALLET Thu Nov 14 14:04:33 2024 +0100
+93cdcd3 Voronoi not used DOS Thu Nov 14 13:43:06 2024 +0100
+851d9db adding StupidAI Christophe VALLET Thu Nov 14 13:39:36 2024 +0100
+3d7f3e4 Gold DOS Thu Nov 14 11:09:39 2024 +0100
+172e0d4 Gold DOS Thu Nov 14 10:45:57 2024 +0100
+c5c0f4a Silver DOS Thu Nov 14 10:20:43 2024 +0100
+493d49e SilverAI Christophe VALLET Thu Nov 14 10:00:50 2024 +0100
+b829d1b Working with game inputs DOS Thu Nov 14 09:59:21 2024 +0100
+610890b implementing the out method Christophe VALLET Wed Nov 13 23:58:07 2024 +0100
+5e280a5 Rename Act into ActionType and remove interface Action DOS Wed Nov 13 23:53:02 2024 +0100
+47848b4 BronzeAI DOS Wed Nov 13 23:50:05 2024 +0100
+041e242 WoodAI DOS Wed Nov 13 23:23:14 2024 +0100
+4f03f26 WoodAI DOS Wed Nov 13 23:21:24 2024 +0100
+ad43a88 fix maven DOS Wed Nov 13 22:44:04 2024 +0100
+4339ee3 Remove lombok DOS Wed Nov 13 22:39:06 2024 +0100
+7f0f122 Grid with different kind of resources inside... DOS Wed Nov 13 22:37:22 2024 +0100
+b9bdc0c Fix readme DOS Wed Nov 13 12:44:47 2024 +0100
+0cc63c2 Initial commit DOS Wed Nov 13 12:20:23 2024 +0100

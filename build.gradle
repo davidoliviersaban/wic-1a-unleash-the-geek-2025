@@ -1,0 +1,30 @@
+plugins {
+	id 'java'
+}
+
+group 'cg-cm-1a-utg-2025'
+version '1.0-SNAPSHOT'
+
+repositories {
+	mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+	// testImplementation 'junit:junit:4.12'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.3'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.3' // Add this line
+
+	testImplementation 'org.json:json:20240303'
+	testImplementation 'commons-io:commons-io:2.17.0'
+}
+
+test {
+	useJUnitPlatform()
+}
+
