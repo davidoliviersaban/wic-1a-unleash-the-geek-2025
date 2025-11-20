@@ -178,8 +178,9 @@ class Player {
 
 		// Read scores
 		int myScore = in.nextInt();
-		int foeScore = in.nextInt();
 		Time.startRoundTimer();
+		Time.debugDuration("Starting initRound");
+		int foeScore = in.nextInt();		
 
 		// Update game state from previous round
 		result = previousGameState.withScores(myScore, foeScore);
@@ -249,18 +250,13 @@ class Player {
 				}
 			}
 		}
+		
+		Time.debugDuration("Finished reading input");
 
 		// Create updated game state
 		result = new GameState(result.round(), result.map(), rails, regions, myScore, foeScore, connectionsSet);
-
-		if (isDebugOn) {
-			// result.print();
-		}
-
-		if (previousGameState != null) {
-			compareInputAgainstPrediction(result);
-		}
-
+		Time.debugDuration("Finished initround");
+		
 		return result;
 
 	}
@@ -285,22 +281,7 @@ class Player {
 
 		if (!stopGame) {
 
-			// List<Action> opActions = null;
-			// if (opAi != null) {
-			// opActions = opAi.computeIntact(gs);
-			// }
-
-			if (isDebugOn) {
-
-				Print.debug("My action:");
-				// Print.debugForInput(actions.toString());
-
-				// if (opActions != null) {
-				// Print.debug("Op action:");
-				// Print.debugForInput("" + opActions);
-				// }
-
-			}
+	
 
 			previousGameState = gs;
 
@@ -1222,6 +1203,8 @@ class SimpleAI implements AI {
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
+		
+		Time.debugDuration("Starting SimpleAI compute");
 
 		Action disruptAction = getDisruptAction(gs);
 		if (disruptAction != null) {
@@ -1229,6 +1212,8 @@ class SimpleAI implements AI {
 			gs = gs.increaseInstability(disruptAction.id());
 		}
 
+		
+		Time.debugDuration("Starting NAMOA");
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
 		for (City city : gs.map().citiesById().values()) {
@@ -1260,10 +1245,14 @@ class SimpleAI implements AI {
 			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
 			result.addAll(railActions);
 		}
+		
+		Time.debugDuration("Finished NAMOA");
 
 		if (result.isEmpty()) {
 			result.add(Action.waitAction());
 		}
+		
+		Time.debugDuration("Finished compute");
 
 		return result;
 	}
