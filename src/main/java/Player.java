@@ -1,72 +1,12 @@
 import java.util.List;
+import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Scanner;
 import java.util.stream.Collectors;
 
-// Generic action types placeholder for the skeleton
-enum ActionType {
-	NONE
-}
-
-interface Element {
-	int x();
-
-	int y();
-}
-
-class Grid {
-
-	public final Element[][] grid;
-	public final int width, height;
-
-	// this hashset should compare solely the x() and y() to define if 2 objects are
-	// equals and override with the new object
-	// public final Map<ResourceType, Set<Element>> resources = new HashMap<>();
-
-	public Grid(int width, int height) {
-		this.width = width;
-		this.height = height;
-		grid = new Element[width][height];
-	}
-
-	public Grid copy() {
-		Grid copy = new Grid(width, height);
-		return copy;
-	}
-
-	public void setElement(Element element) {
-		Element oldElement = grid[element.x()][element.y()];
-		removeElement(oldElement);
-		grid[element.x()][element.y()] = element;
-	}
-
-	public void removeElement(Element element) {
-		if (element == null) {
-			return;
-		}
-		removeElement(element.x(), element.y());
-	}
-
-	public void removeElement(int x, int y) {
-		Element element = grid[x][y];
-		if (element != null) {
-			grid[x][y] = null;
-		}
-	}
-
-	public Element getElement(int x, int y) {
-		return grid[x][y];
-	}
-
-	public void print() {
-		for (int y = 0; y < grid[0].length; y++) {
-			for (int x = 0; x < grid.length; x++) {
-				System.err.print(grid[x][y] + " ");
-			}
-			System.err.println();
-		}
-	}
-
-}
+// Legacy embedded types removed. See new standalone records (Coord, TerrainCell, City, Region, Rail, Action, GameState, MapDefinition).
 
 /**
  * Core entry point for the skeleton game implementation.
@@ -93,7 +33,7 @@ class Player {
 
 	// Game variables
 	private static GameState previousGameState;
-	private static GameState predictedGameState;
+	private static GameState predictedGameState; // placeholder for future prediction feature
 	private static boolean stopGame = false;
 
 	public static void main(String args[]) {
@@ -128,6 +68,8 @@ class Player {
 		int height = in.nextInt(); // rows in the game grid
 		MatchConstants.height = height;
 		MatchConstants.width = width;
+		MatchConstants.regionsCount = 0; // will be set once regions parsed
+		MatchConstants.cityCount = 0; // will be set once cities parsed
 
 		Time.startRoundTimer(); // Unless there is nothing to read in the scanner outside of the loop !
 		// Memory.initMemory();
@@ -140,10 +82,10 @@ class Player {
 		GameState result = null;
 
 		if (previousGameState == null) {
-			result = new GameState(1, new Grid(MatchConstants.width, MatchConstants.height));
+			// Initial blank map definition via GameState factory
+			result = GameState.createInitial(MatchConstants.width, MatchConstants.height);
 		} else {
-			result = new GameState(previousGameState.round() + 1,
-					new Grid(MatchConstants.width, MatchConstants.height));
+			result = previousGameState.nextRound();
 		}
 
 		int entityCount = in.nextInt();
@@ -171,19 +113,13 @@ class Player {
 	// new test
 	private static void compareInputAgainstPrediction(GameState gameStateFromInput) {
 		if (isCompareFailureOn && predictedGameState != null && !predictedGameState.equals(gameStateFromInput)) {
-
 			if (isDebugOn) {
-				Print.debug("Ran comparison between the input and the prediction and predicted:");
-				predictedGameState.print();
+				Print.debug("Prediction mismatch detected. (No pretty print available)");
 				Print.debug("Stop the game");
 			}
-
 			stopGame = true;
-
-		} else {
-			if (isDebugOn) {
-				Print.debug("Prediction ok !");
-			}
+		} else if (isDebugOn) {
+			Print.debug("Prediction ok !");
 		}
 
 	}
@@ -241,6 +177,9 @@ class Player {
 // change from one match to another
 class MatchConstants {
 
+	public static int cityCount;
+	public static int regionsCount;
+	public static final int INSTABILITY_THRESHOLD = 4;
 	public static int height;
 	public static int width;
 
@@ -341,13 +280,215 @@ class Print {
 
 }
 
-// Minimal action representation (no domain specifics like resources/organs)
-record Action(ActionType type, int x, int y) {
+// Consolidated model (single-file constraint): all domain records & enums
+// below.
+
+enum ActionType {
+	BUILD_RAIL, WAIT
+}
+
+record Coord(int x, int y) {
+	boolean isInside(int width, int height) {
+		return x >= 0 && x < width && y >= 0 && y < height;
+	}
+}
+
+enum TerrainType {
+	PLAIN, RIVER, MOUNTAIN
+}
+
+record TerrainCell(int x, int y, TerrainType type, City city, POI poi) {
+	TerrainCell(int x, int y, TerrainType type) {
+		this(x, y, type, null, null);
+	}
+
+	int buildCost() {
+		return switch (type) {
+			case PLAIN -> 1;
+			case RIVER -> 2;
+			case MOUNTAIN -> 3;
+		};
+	}
+
+	boolean hasCity() {
+		return city != null;
+	}
+
+	boolean hasPOI() {
+		return poi != null;
+	}
+}
+
+record City(int id, int x, int y, int regionId, List<Integer> desiredCityIds) {
+	boolean desires(int otherCityId) {
+		return desiredCityIds != null && desiredCityIds.contains(otherCityId);
+	}
+}
+
+record POI(int id, int x, int y, int regionId) {
+}
+
+record Region(int id, int instability) {
+	boolean isInstable(int threshold) {
+		return instability >= threshold;
+	}
+
+	Region increaseInstability() {
+		return new Region(id, instability + 1);
+	}
+}
+
+enum RailOwner {
+	ME, OPPONENT, CONTESTED, NONE;
+
+	boolean isOwned() {
+		return this == ME || this == OPPONENT;
+	}
+}
+
+record Rail(int x, int y, RailOwner owner) {
+	boolean isContested() {
+		return owner == RailOwner.CONTESTED;
+	}
+}
+
+record MapDefinition(
+		int width,
+		int height,
+		TerrainCell[][] terrain,
+		Map<Integer, City> citiesById,
+		Map<Coord, Integer> coordToRegionId,
+		int regionCount) {
+	TerrainCell cell(int x, int y) {
+		return terrain[x][y];
+	}
+
+	boolean hasCity(int x, int y) {
+		return terrain[x][y].hasCity();
+	}
+
+	City getCityAt(int x, int y) {
+		return terrain[x][y].city();
+	}
+}
+
+record Action(ActionType type, Coord coord) {
+	static Action buildRail(int x, int y) {
+		return new Action(ActionType.BUILD_RAIL, new Coord(x, y));
+	}
+
+	static Action waitAction() {
+		return new Action(ActionType.WAIT, null);
+	}
 
 	@Override
 	public String toString() {
-		// Output kept deliberately simple to ease later parsing / extension
-		return type + " " + x + " " + y;
+		return switch (type) {
+			case BUILD_RAIL -> coord.x() + " " + coord.y();
+			case WAIT -> "WAIT";
+		};
+	}
+}
+
+record GameState(
+		int round,
+		MapDefinition map,
+		Map<Coord, Rail> rails,
+		Region[] regions,
+		int myScore,
+		int opponentScore) {
+	GameState nextRound() {
+		return new GameState(round + 1, map, rails, regions, myScore, opponentScore);
+	}
+
+	GameState withRails(List<Coord> coords, RailOwner owner) {
+		Map<Coord, Rail> newRails = new HashMap<>(rails);
+		for (Coord c : coords) {
+			Rail existing = newRails.get(c);
+			Rail newRail = existing == null ? new Rail(c.x(), c.y(), owner) : resolveConflict(existing, owner);
+			newRails.put(c, newRail);
+		}
+		return new GameState(round, map, newRails, regions, myScore, opponentScore);
+	}
+
+	private Rail resolveConflict(Rail existing, RailOwner incoming) {
+		if (existing.owner() == incoming)
+			return existing;
+		return new Rail(existing.x(), existing.y(), RailOwner.CONTESTED);
+	}
+
+	boolean canBuildAt(Coord c) {
+		if (!c.isInside(map.width(), map.height()))
+			return false;
+		Integer regionId = map.coordToRegionId().get(c);
+		if (regionId != null && regions.length > regionId
+				&& regions[regionId].isInstable(MatchConstants.INSTABILITY_THRESHOLD))
+			return false;
+		TerrainCell cell = map.terrain()[c.x()][c.y()];
+		return !cell.hasCity() && !cell.hasPOI();
+	}
+
+	GameState increaseInstability(int regionId) {
+		Region[] newRegions = regions.clone();
+		if (regionId >= 0 && regionId < newRegions.length) {
+			newRegions[regionId] = newRegions[regionId].increaseInstability();
+			if (newRegions[regionId].isInstable(MatchConstants.INSTABILITY_THRESHOLD)) {
+				Map<Coord, Rail> filtered = new HashMap<>();
+				for (var e : rails.entrySet()) {
+					Integer rid = map.coordToRegionId().get(e.getKey());
+					if (rid == null || rid != regionId)
+						filtered.put(e.getKey(), e.getValue());
+				}
+				return new GameState(round, map, filtered, newRegions, myScore, opponentScore);
+			}
+		}
+		return new GameState(round, map, rails, newRegions, myScore, opponentScore);
+	}
+
+	GameState withScores(int my, int opp) {
+		return new GameState(round, map, rails, regions, my, opp);
+	}
+
+	static GameState createInitial(int width, int height) {
+		TerrainCell[][] terrain = new TerrainCell[width][height];
+		for (int x = 0; x < width; x++) {
+			for (int y = 0; y < height; y++) {
+				terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null); // Default to PLAIN
+			}
+		}
+		MapDefinition mapDef = new MapDefinition(width, height, terrain, Map.of(), Map.of(), 0);
+		return new GameState(1, mapDef, Map.of(), new Region[0], 0, 0);
+	}
+}
+
+class GameEngine {
+	static GameState applyActions(GameState state, List<Action> myActions, List<Action> oppActions) {
+		GameState result = state;
+		List<Coord> myCoords = buildCoords(myActions);
+		List<Coord> oppCoords = buildCoords(oppActions);
+		if (myCoords != null && oppCoords != null && !Collections.disjoint(myCoords, oppCoords)) {
+			List<Coord> contested = new ArrayList<>(myCoords);
+			contested.retainAll(oppCoords);
+			result = result.withRails(contested, RailOwner.CONTESTED);
+			myCoords.removeAll(contested);
+			oppCoords.removeAll(contested);
+			if (myCoords.isEmpty() == false)
+				result = result.withRails(myCoords, RailOwner.ME);
+			if (oppCoords.isEmpty() == false)
+				result = result.withRails(oppCoords, RailOwner.OPPONENT);
+		} else {
+			if (myCoords != null)
+				result = result.withRails(myCoords, RailOwner.ME);
+			if (oppCoords != null)
+				result = result.withRails(oppCoords, RailOwner.OPPONENT);
+		}
+		return result.nextRound();
+	}
+
+	private static List<Coord> buildCoords(List<Action> actions) {
+		if (actions == null)
+			return null;
+		return actions.stream().filter(a -> a.type() == ActionType.BUILD_RAIL).map(Action::coord).toList();
 	}
 }
 
@@ -366,12 +507,12 @@ enum GameResult {
 	TIE // Game finished and tied
 }
 
-// Core game state skeleton: only round count and grid
-record GameState(int round, Grid grid) implements GameStateObject {
-	public GameState copy() {
-		return new GameState(round, grid.copy());
-	}
-}
+// Pathfinding (NAMOA*) removed during refactor; will be ported later to new
+// model.
+
+// GameState moved to dedicated file GameState.java
+
+// GameEngine moved to its own file
 
 interface AI {
 
@@ -379,14 +520,12 @@ interface AI {
 	// INTACT during the computation
 	// This is the default entry point for an AI
 	public default List<Action> computeIntact(GameState gs) {
-
-		// Defensive: allow null GameState for tests or early skeleton usage
+		// For new immutable GameState we can safely pass it directly.
 		if (gs == null) {
-			gs = new GameState(1, new Grid(1, 1));
+			gs = GameState.createInitial(MatchConstants.width > 0 ? MatchConstants.width : 26,
+					MatchConstants.height > 0 ? MatchConstants.height : 17);
 		}
-		// Work on a copy to keep provided GameState intact
-		GameState gsCopy = gs.copy();
-		return compute(gsCopy);
+		return compute(gs);
 	}
 
 	// Compute the action on the provided gs, *potentially* altering it during the
@@ -415,11 +554,11 @@ interface AI {
 class StupidAI implements AI {
 	@Override
 	public List<Action> compute(GameState gs) {
-		// Defensive: create a minimal GameState when null (tests currently pass null)
 		if (gs == null) {
-			gs = new GameState(1, new Grid(1, 1));
+			gs = GameState.createInitial(MatchConstants.width > 0 ? MatchConstants.width : 26,
+					MatchConstants.height > 0 ? MatchConstants.height : 17);
 		}
-		// Produce a single placeholder action so that tests expecting >0 actions pass
-		return List.of(new Action(ActionType.NONE, 0, 0));
+		// Return a WAIT placeholder action
+		return List.of(Action.waitAction());
 	}
 }
