@@ -1125,6 +1125,8 @@ interface AI {
 	public default Action getDisruptAction(GameState gs) {
 		Action result = null;
 
+		Time.debugDuration("Entering getDisruptAction");
+
 		double[] regionValues = new double[gs.regions().length];
 
 		// add rails being part of active connections to the city pairs,
@@ -1142,9 +1144,12 @@ interface AI {
 		int worstRegionId = -1;
 
 		for (int i = 0; i < regionValues.length; i++) {
-			regionValues[i] = regionValues[i] / (3 - gs.regions()[i].instability());
-			Print.debug("Region " + Print.formatIntFixedLenght(2, worstRegionId) + " is worth "
-					+ Print.formatDoubleFixedLenghtAFterComma(10, 2, regionValues[i]));
+			double regionValueWithInstability = regionValues[i] / (3 - gs.regions()[i].instability());
+
+			Print.debug("Region " + Print.formatIntFixedLenght(2, i) + " is worth "
+					+ Print.formatIntFixedLenght(3, (int) regionValues[i]) + " and with instability is: "
+					+ Print.formatDoubleFixedLenghtAFterComma(4, 2, regionValues[i]));
+			regionValues[i] = regionValueWithInstability;
 			if (regionValues[i] < worstRegion) {
 				worstRegionId = i;
 			}
@@ -1153,6 +1158,8 @@ interface AI {
 		if (worstRegionId != -1) {
 			result = Action.disruptRegion(worstRegionId);
 		}
+
+		Time.debugDuration("Exiting getDisruptAction");
 
 		return result;
 	}
@@ -1244,9 +1251,9 @@ class SimpleAI implements AI {
 
 				// I compute possible paths to those target cities
 				Long duration = Time.getRoundDuration();
-				Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
-						+ targetCities.stream().map(c -> Integer.toString(c.id()))
-								.collect(java.util.stream.Collectors.joining(", ")));
+				Print.debug(
+						duration + "ms: Computing NAMOA* paths from city " + city.id() + " to " + targetCities.stream()
+								.map(c -> Integer.toString(c.id())).collect(java.util.stream.Collectors.joining(", ")));
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
 				// I store them for later use
