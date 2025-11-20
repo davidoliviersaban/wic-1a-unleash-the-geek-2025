@@ -3,6 +3,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Random;
@@ -134,27 +135,37 @@ class Player {
 		MatchConstants.regionsCount = regionIds.size();
 
 		// Create initial MapDefinition
-		MapDefinition mapDef = new MapDefinition(width, height, tiles, citiesById);
-
-		// Initialize regions array and populate with terrain cells
-		Region[] regions = new Region[regionIds.size()];
-		Map<Integer, List<Tile>> regionCellsMap = new HashMap<>();
+		TerrainType[][] terrainType = new TerrainType[width][height];
+		int[][] regionIdArray = new int[width][height];
+		int[][] cityIdArray = new int[width][height];
+		City[] citiesByIdArray = new City[townCount];
+		Region[] regions = new Region[MatchConstants.regionsCount];
 
 		// Collect cells for each region
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				int regionId = tiles[x][y].regionId();
-				regionCellsMap.computeIfAbsent(regionId, k -> new ArrayList<>()).add(tiles[x][y]);
+				if (regions[regionId] == null) {
+					regions[regionId] = new Region(regionId, 0, new ArrayList<>(), new HashSet<>());
+				}
+				regions[regionId].cells().add(tiles[x][y]);
 			}
 		}
 
-		// Create regions with their cells
-		for (int id : regionIds) {
-			if (id >= 0 && id < regions.length) {
-				List<Tile> cells = regionCellsMap.getOrDefault(id, new ArrayList<>());
-				regions[id] = new Region(id, 0, cells, new HashSet<>());
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				terrainType[x][y] = tiles[x][y].type();
+				regionIdArray[x][y] = tiles[x][y].regionId();
+				cityIdArray[x][y] = tiles[x][y].city() != null ? tiles[x][y].city().id() : -1;
 			}
 		}
+
+		for (City city : citiesById.values()) {
+			citiesByIdArray[city.id()] = city;
+		}
+
+		MapDefinition mapDef = new MapDefinition(width, height, tiles, terrainType, regionIdArray, cityIdArray,
+				citiesByIdArray, regions);
 
 		// Populate connections map for all city pairs
 		for (City city1 : citiesById.values()) {
@@ -169,7 +180,7 @@ class Player {
 			}
 		}
 		// Create initial game state
-		previousGameState = new GameState(0, mapDef, new HashMap<>(), regions, 0, 0, null);
+		previousGameState = new GameState(0, mapDef, new HashMap<>(), 0, 0, null);
 
 		Time.startRoundTimer();
 		MatchConstants.print();
@@ -191,12 +202,11 @@ class Player {
 
 		// Parse grid state
 		Map<Coord, Rail> rails = new HashMap<>(MatchConstants.width * MatchConstants.height);
-		Region[] regions = result.regions().clone();
 		Set<Connection> resetCachedConnectionsSet = new TreeSet<>();
 
 		@SuppressWarnings("unchecked")
-		Set<Connection>[] regionConnections = new Set[regions.length];
-		int[] regionInstability = new int[regions.length];
+		Set<Connection>[] regionConnections = new Set[MatchConstants.regionsCount];
+		int[] regionInstability = new int[MatchConstants.regionsCount];
 
 		Time.debugDuration("Starting reading input");
 
@@ -246,16 +256,16 @@ class Player {
 		Time.debugDuration("Update regions");
 
 		// Update regions once after reading all input
-		for (int i = 0; i < regions.length; i++) {
-			List<Tile> existingCells = regions[i].cells();
+		for (int i = 0; i < MatchConstants.regionsCount; i++) {
+			List<Tile> existingCells = result.map().regions()[i].cells();
 			Set<Connection> connections = regionConnections[i] != null ? regionConnections[i] : new HashSet<>();
-			regions[i] = new Region(i, regionInstability[i], existingCells, connections);
+			result.map().regions()[i] = new Region(i, regionInstability[i], existingCells, connections);
 		}
 
 		Time.debugDuration("Finished reading input");
 
 		// Create updated game state
-		result = new GameState(result.round(), result.map(), rails, regions, myScore, foeScore,
+		result = new GameState(result.round(), result.map(), rails, myScore, foeScore,
 				resetCachedConnectionsSet);
 		Time.debugDuration("Finished initround");
 
@@ -548,20 +558,42 @@ class Rail {
 	}
 }
 
-record MapDefinition(int width, int height, Tile[][] terrain, Map<Integer, City> citiesById) {
+record MapDefinition(
+		int width,
+		int height,
+		Tile[][] terrain,
+		TerrainType[][] terrainType,
+		int[][] regionId,
+		int[][] cityId,
+		City[] citiesById,
+		Region[] regions) {
+
+	MapDefinition {
+		Objects.requireNonNull(terrainType);
+		Objects.requireNonNull(regionId);
+		Objects.requireNonNull(cityId);
+		Objects.requireNonNull(citiesById);
+		Objects.requireNonNull(regions);
+	}
 
 	Tile cell(int x, int y) {
-		return terrain[x][y];
+		// Legacy compatibility: synthesize a Tile view if older code still needs it
+		City city = cityId[x][y] >= 0 ? citiesById[cityId[x][y]] : null;
+		return new Tile(x, y, regionId[x][y], terrainType[x][y], -1, false, city, List.of());
 	}
 
-	boolean hasCity(int x, int y) {
-		return terrain[x][y].hasCity();
+	int regionIdAt(int x, int y) {
+		return regionId[x][y];
 	}
 
-	City getCityAt(int x, int y) {
-		return terrain[x][y].city();
+	City cityAt(int x, int y) {
+		int id = cityId[x][y];
+		return id >= 0 ? citiesById[id] : null;
 	}
 
+	City cityById(int id) {
+		return citiesById[id];
+	}
 }
 
 record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Comparable<Action> {
@@ -599,12 +631,12 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Co
 	}
 }
 
-record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] regions, int myScore, int opponentScore,
+record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int myScore, int opponentScore,
 		Set<Connection> cachedConnections) {
 
 	GameState nextRound() {
 		Print.debug("Advancing to round " + (round() + 1));
-		return new GameState(round() + 1, map(), rails(), regions(), myScore(), opponentScore(), cachedConnections());
+		return new GameState(round() + 1, map(), rails(), myScore(), opponentScore(), cachedConnections());
 	}
 
 	GameState withRails(List<Coord> coords, RailOwner owner) {
@@ -614,7 +646,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 			Rail newRail = existing == null ? new Rail(c.x(), c.y(), owner) : resolveConflict(existing, owner);
 			newRails.put(c, newRail);
 		}
-		return new GameState(round, map, newRails, regions, myScore, opponentScore, cachedConnections);
+		return new GameState(round, map, newRails, myScore, opponentScore, cachedConnections);
 	}
 
 	private Rail resolveConflict(Rail existing, RailOwner incoming) {
@@ -639,7 +671,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 			return false;
 
 		int regionId = map.cell(c.x(), c.y()).regionId();
-		if (regions[regionId].isInstable())
+		if (map().regions()[regionId].isInstable())
 			return false;
 
 		Tile cell = map.terrain()[c.x()][c.y()];
@@ -647,7 +679,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 	}
 
 	GameState increaseInstability(int regionId) {
-		Region[] newRegions = regions.clone();
+		Region[] newRegions = map().regions().clone();
 		if (regionId >= 0 && regionId < newRegions.length) {
 			newRegions[regionId] = newRegions[regionId].increaseInstability();
 			if (newRegions[regionId].isInstable()) {
@@ -663,18 +695,18 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 						}
 					}
 				}
-				return new GameState(round, map, newRails, newRegions, myScore, opponentScore, cachedConnections);
+				return new GameState(round, map, newRails, myScore, opponentScore, cachedConnections);
 			}
 		}
-		return new GameState(round, map, rails, newRegions, myScore, opponentScore, cachedConnections);
+		return new GameState(round, map, rails, myScore, opponentScore, cachedConnections);
 	}
 
 	GameState withScores(int my, int opp) {
-		return new GameState(round, map, rails, regions, my, opp, cachedConnections);
+		return new GameState(round, map, rails, my, opp, cachedConnections);
 	}
 
 	GameState withCachedConnections(Set<Connection> connections) {
-		return new GameState(round, map, rails, regions, myScore, opponentScore, connections);
+		return new GameState(round, map, rails, myScore, opponentScore, connections);
 	}
 
 	// For testing purposes
@@ -686,8 +718,19 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 																											// PLAIN
 			}
 		}
-		MapDefinition mapDef = new MapDefinition(width, height, tiles, Map.of());
-		return new GameState(1, mapDef, Map.of(), new Region[0], 0, 0, null);
+		TerrainType[][] terrainTypeArray = new TerrainType[width][height];
+		int[][] regionIdArray = new int[width][height];
+		int[][] cityIdArray = new int[width][height];
+		for (int x = 0; x < width; x++) {
+			for (int y = 0; y < height; y++) {
+				terrainTypeArray[x][y] = tiles[x][y].type();
+				regionIdArray[x][y] = tiles[x][y].regionId();
+				cityIdArray[x][y] = tiles[x][y].city() != null ? tiles[x][y].city().id() : -1;
+			}
+		}
+		MapDefinition mapDef = new MapDefinition(width, height, tiles, terrainTypeArray, regionIdArray, cityIdArray,
+				new City[0], new Region[0]);
+		return new GameState(1, mapDef, Map.of(), 0, 0, null);
 	}
 }
 
@@ -826,7 +869,7 @@ class NAMOAStar {
 			}
 
 			// Check if we reached a target
-			City reachedCity = gs.map().getCityAt(current.coord().x(), current.coord().y());
+			City reachedCity = gs.map().cityAt(current.coord().x(), current.coord().y());
 			if (reachedCity != null && targetIds.contains(reachedCity.id())) {
 				List<Coord> path = reconstructPath(current);
 				NAMOAPath solution = new NAMOAPath(start, reachedCity, path, current.cost());
@@ -948,7 +991,7 @@ class NAMOAStar {
 
 			if (MatchConstants.isValid(nx, ny)) {
 				Coord neighbor = MatchConstants.coord(nx, ny);
-				if (gs.canBuildAt(neighbor) || gs.rails().containsKey(neighbor) || gs.map().hasCity(nx, ny)) {
+				if (gs.canBuildAt(neighbor) || gs.rails().containsKey(neighbor) || gs.map().cityAt(nx, ny) != null) {
 					neighbors.add(neighbor);
 				}
 			}
@@ -963,7 +1006,7 @@ class NAMOAStar {
 			return 0;
 		}
 		// If it's a city, no cost
-		if (gs.map().hasCity(coord.x(), coord.y())) {
+		if (gs.map().cityAt(coord.x(), coord.y()) != null) {
 			return 0;
 		}
 		// Otherwise, terrain build cost
@@ -1074,7 +1117,7 @@ interface AI {
 		}
 
 		double worstRegionValue = 0;
-		for (Region region : gs.regions()) {
+		for (Region region : gs.map().regions()) {
 			if (region.isInstable() || region.containsACity()) {
 				continue;
 			}
@@ -1097,7 +1140,7 @@ interface AI {
 
 			Region regionToKill = null;
 			double bestBalance = 0;
-			for (Region region : gs.regions()) {
+			for (Region region : gs.map().regions()) {
 
 				if (!region.connections().isEmpty() || region.isInstable() || region.containsACity()) {
 					continue;
@@ -1139,44 +1182,6 @@ interface AI {
 	}
 }
 
-/**
- * Extremely basic AI used as a placeholder. Always returns one dummy action at
- * (0,0) with ActionType.NONE so tests can assert non-empty output.
- */
-class StupidAI implements AI {
-
-	Random r = new Random();
-
-	@Override
-	public List<Action> compute(GameState gs) {
-		List<Action> result = new ArrayList<Action>();
-		Action disruptAction = getDisruptAction(gs);
-		if (disruptAction != null) {
-			result.add(disruptAction);
-			gs = gs.increaseInstability(disruptAction.id());
-		}
-
-		if (!gs.map().citiesById().isEmpty()) {
-			City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
-			if (randomCity != null && !randomCity.desiredCityIds().isEmpty()) {
-				City randomDesired = gs.map().citiesById()
-						.get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
-				if (randomDesired != null) {
-					Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(),
-							randomDesired.y());
-					result.add(randomAutoPlace);
-				}
-			}
-		}
-
-		if (result.isEmpty()) {
-			result.add(Action.waitAction());
-		}
-
-		return result;
-	}
-}
-
 record NAMOAPathsForCity(City city, Map<Integer, List<NAMOAPath>> pathsToTargets) {
 }
 
@@ -1191,7 +1196,7 @@ class SimpleAI implements AI {
 	public List<NAMOAPath> findSortedCheapestPaths(GameState gs,
 			Map<Integer, NAMOAPathsForCity> possiblePathsMapFromCityMap) {
 		List<NAMOAPath> allPaths = new ArrayList<>();
-		for (City city : gs.map().citiesById().values()) {
+		for (City city : gs.map().citiesById()) {
 			NAMOAPathsForCity namoaPathsForCity = possiblePathsMapFromCityMap.get(city.id());
 			if (namoaPathsForCity == null) {
 				continue;
@@ -1225,7 +1230,7 @@ class SimpleAI implements AI {
 		for (NAMOAPath path : paths) {
 			for (Coord coord : path.path()) {
 				// Skip cities (start and end points)
-				if (gs.map().hasCity(coord.x(), coord.y())) {
+				if (gs.map().cityAt(coord.x(), coord.y()) != null) {
 					continue;
 				}
 				// Only place rail if there isn't one already
@@ -1261,7 +1266,7 @@ class SimpleAI implements AI {
 		Time.debugDuration("Starting NAMOA");
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
-		for (City city : gs.map().citiesById().values()) {
+		for (City city : gs.map().citiesById()) {
 			if (!city.desiredCityIds().isEmpty()) {
 				final GameState fgs = gs;
 
@@ -1270,7 +1275,7 @@ class SimpleAI implements AI {
 				for (int desiredCityId : city.desiredCityIds()) {
 					if (!fgs.cachedConnections()
 							.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
-						targetCities.add(fgs.map().citiesById().get(desiredCityId));
+						targetCities.add(fgs.map().citiesById()[desiredCityId]);
 					}
 				}
 
