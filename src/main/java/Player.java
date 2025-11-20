@@ -152,18 +152,14 @@ class Player {
 		MapDefinition mapDef = new MapDefinition(width, height, terrainType, regionIdArray, cityIdArray,
 				citiesById, regions);
 
-		// Populate connections map for all city pairs
+		MatchConstants.connectionLookup = new Connection[townCount][townCount];
 		for (City city1 : citiesById) {
 			if (city1 == null)
 				continue;
-			MatchConstants.connectionLookup = new Connection[townCount][townCount];
-
 			for (City city2 : citiesById) {
 				if (city2 == null)
 					continue;
 				Connection connection = new Connection(city1.id(), city2.id());
-				MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection); // Self-connection
-				MatchConstants.connections.put(city2.id() + "-" + city1.id(), connection); // Self-connection
 				MatchConstants.connectionLookup[city1.id()][city2.id()] = connection;
 				MatchConstants.connectionLookup[city2.id()][city1.id()] = connection;
 			}
@@ -173,6 +169,27 @@ class Player {
 
 		Time.startRoundTimer();
 		MatchConstants.print();
+	}
+
+	private static Connection parseConnectionToken(String token) {
+		if (token == null) {
+			return null;
+		}
+		String trimmed = token.trim();
+		if (trimmed.isEmpty() || "x".equalsIgnoreCase(trimmed)) {
+			return null;
+		}
+		String[] ids = trimmed.split("-");
+		if (ids.length != 2) {
+			return null;
+		}
+		try {
+			int from = Integer.parseInt(ids[0]);
+			int to = Integer.parseInt(ids[1]);
+			return MatchConstants.connection(from, to);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
 	}
 
 	static GameState initRound(Scanner in) {
@@ -227,7 +244,9 @@ class Player {
 					if (partOfActiveConnectionStr.charAt(0) != 'x') {
 						String[] connections = partOfActiveConnectionStr.split(",");
 						for (String conn : connections) {
-							Connection connection = MatchConstants.connections.get(conn);
+							Connection connection = MatchConstants.connection(
+									Integer.parseInt(conn.split("-")[0]),
+									Integer.parseInt(conn.split("-")[1]));
 							rail.partOfActiveConnections.add(connection);
 							resetCachedConnectionsSet.add(connection);
 
@@ -244,11 +263,14 @@ class Player {
 
 		Time.debugDuration("Update regions");
 
-		// Update regions once after reading all input
 		for (int i = 0; i < MatchConstants.regionsCount; i++) {
 			Region oldRegion = result.map().regions()[i];
+			if (oldRegion == null) {
+				oldRegion = new Region(i, 0, new ArrayList<>(), new HashSet<>(), false);
+			}
 			Set<Connection> connections = regionConnections[i] != null ? regionConnections[i] : new HashSet<>();
-			result.map().regions()[i] = new Region(oldRegion.id(), regionInstability[i], oldRegion.cells(), connections,
+			int instability = regionInstability[i] != 0 ? regionInstability[i] : oldRegion.instability();
+			result.map().regions()[i] = new Region(oldRegion.id(), instability, oldRegion.cells(), connections,
 					oldRegion.hasCity());
 		}
 
@@ -299,7 +321,6 @@ class Player {
 // change from one match to another
 class MatchConstants {
 
-	public static Map<String, Connection> connections = new HashMap<>();
 	public static Connection[][] connectionLookup;
 	public static int cityCount;
 	public static int regionsCount;
@@ -328,6 +349,14 @@ class MatchConstants {
 
 	public static void print() {
 		Print.debugForInput("MatchConstatns height: " + height + " width:" + width);
+	}
+
+	public static Connection connection(int fromId, int toId) {
+		if (connectionLookup == null || fromId < 0 || fromId >= connectionLookup.length || toId < 0
+				|| toId >= connectionLookup[fromId].length) {
+			return null;
+		}
+		return connectionLookup[fromId][toId];
 	}
 
 }
@@ -551,9 +580,17 @@ record MapDefinition(
 		return regionId[x][y];
 	}
 
+	int regionIdAt(Coord coord) {
+		return regionIdAt(coord.x(), coord.y());
+	}
+
 	City cityAt(int x, int y) {
 		int id = cityId[x][y];
 		return id >= 0 ? citiesById[id] : null;
+	}
+
+	City cityAt(Coord coord) {
+		return cityAt(coord.x(), coord.y());
 	}
 
 	City cityById(int id) {
@@ -562,6 +599,10 @@ record MapDefinition(
 
 	int buildCostAt(int x, int y) {
 		return terrainType[x][y].buildCost();
+	}
+
+	TerrainType terrainAt(Coord coord) {
+		return terrainType[coord.x()][coord.y()];
 	}
 }
 
@@ -602,6 +643,12 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Co
 
 record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int myScore, int opponentScore,
 		Set<Connection> cachedConnections) {
+
+	GameState {
+		Objects.requireNonNull(map);
+		Objects.requireNonNull(rails);
+		Objects.requireNonNull(cachedConnections);
+	}
 
 	GameState nextRound() {
 		Print.debug("Advancing to round " + (round() + 1));
@@ -675,13 +722,25 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 		return new GameState(round, map, rails, myScore, opponentScore, connections);
 	}
 
+	int regionIdAt(Coord coord) {
+		return map.regionIdAt(coord);
+	}
+
+	City cityAt(Coord coord) {
+		return map.cityAt(coord);
+	}
+
+	RailOwner ownerAt(Coord coord) {
+		Rail rail = rails.get(coord);
+		return rail != null ? rail.owner() : RailOwner.NONE;
+	}
+
 	// For testing purposes
 	static GameState createInitial(int width, int height) {
 		Tile[][] tiles = new Tile[width][height];
 		for (int x = 0; x < width; x++) {
 			for (int y = 0; y < height; y++) {
-				tiles[x][y] = new Tile(x, y, -1, TerrainType.PLAIN, null); // Default to
-																			// PLAIN
+				tiles[x][y] = new Tile(x, y, -1, TerrainType.PLAIN, null);
 			}
 		}
 		TerrainType[][] terrainTypeArray = new TerrainType[width][height];

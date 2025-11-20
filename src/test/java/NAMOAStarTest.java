@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -456,7 +455,6 @@ public class NAMOAStarTest {
     }
 
     private static void initializeConnections(City[] citiesById) {
-        MatchConstants.connections.clear();
         int size = Math.max(1, citiesById.length);
         MatchConstants.connectionLookup = new Connection[size][size];
         for (int i = 0; i < size; i++) {
@@ -469,7 +467,6 @@ public class NAMOAStarTest {
                 }
                 Connection connection = new Connection(i, j);
                 MatchConstants.connectionLookup[i][j] = connection;
-                MatchConstants.connections.put(i + "-" + j, connection);
             }
         }
     }
