@@ -1,9 +1,11 @@
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Queue;
+import java.util.Random;
 import java.util.LinkedList;
 import java.util.Set;
 import java.util.HashSet;
@@ -87,10 +89,10 @@ class Player {
 				int type = in.nextInt(); // 0 (PLAINS), 1 (RIVER), 2 (MOUNTAIN), 3 (POI)
 
 				TerrainType terrainType = switch (type) {
-					case 0 -> TerrainType.PLAIN;
-					case 1 -> TerrainType.RIVER;
-					case 2 -> TerrainType.MOUNTAIN;
-					default -> TerrainType.PLAIN; // POI treated as plain for now
+				case 0 -> TerrainType.PLAIN;
+				case 1 -> TerrainType.RIVER;
+				case 2 -> TerrainType.MOUNTAIN;
+				default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
 				POI poi = (type == 3) ? new POI(0, x, y, regionId) : null;
@@ -286,7 +288,7 @@ class Player {
 			System.out.println("Failure!");
 		} else {
 			String output = "";
-			output = actions.stream().map(Action::toString).collect(Collectors.joining("\n"));
+			output = actions.stream().map(Action::toString).collect(Collectors.joining(";"));
 			System.out.println(output);
 		}
 
@@ -419,7 +421,7 @@ class Print {
 // below.
 
 enum ActionType {
-	BUILD_RAIL, WAIT
+	PLACE_TRACKS, DISRUPT, AUTOPLACE, MESSAGE, WAIT
 }
 
 record Coord(int x, int y) {
@@ -443,9 +445,9 @@ record TerrainCell(int x, int y, TerrainType type, City city, POI poi) {
 
 	int buildCost() {
 		return switch (type) {
-			case PLAIN -> 1;
-			case RIVER -> 2;
-			case MOUNTAIN -> 3;
+		case PLAIN -> 1;
+		case RIVER -> 2;
+		case MOUNTAIN -> 3;
 		};
 	}
 
@@ -514,13 +516,8 @@ class Rail {
 	}
 }
 
-record MapDefinition(
-		int width,
-		int height,
-		TerrainCell[][] terrain,
-		Map<Integer, City> citiesById,
-		Map<Coord, Integer> coordToRegionId,
-		int regionCount) {
+record MapDefinition(int width, int height, TerrainCell[][] terrain, Map<Integer, City> citiesById,
+		Map<Coord, Integer> coordToRegionId, int regionCount) {
 
 	TerrainCell cell(int x, int y) {
 		return terrain[x][y];
@@ -535,30 +532,36 @@ record MapDefinition(
 	}
 }
 
-record Action(ActionType type, Coord coord) {
+record Action(ActionType type, Coord coord1, Coord coord2) {
 	static Action buildRail(int x, int y) {
-		return new Action(ActionType.BUILD_RAIL, MatchConstants.coord(x, y));
+		return new Action(ActionType.PLACE_TRACKS, MatchConstants.coord(x, y), null);
+	}
+
+	static Action autoPlace(int x1, int y1, int x2, int y2) {
+		return new Action(ActionType.AUTOPLACE, MatchConstants.coord(x1, y1), MatchConstants.coord(x2, y2));
+	}
+	
+	static Action disrupt(int x, int y) {
+		return new Action(ActionType.DISRUPT, MatchConstants.coord(x, y), null);
 	}
 
 	static Action waitAction() {
-		return new Action(ActionType.WAIT, null);
+		return new Action(ActionType.WAIT, null, null);
 	}
 
 	@Override
 	public String toString() {
 		return switch (type) {
-			case BUILD_RAIL -> coord.x() + " " + coord.y();
-			case WAIT -> "WAIT";
+		case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
+		case AUTOPLACE -> ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
+		case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
+		case MESSAGE -> ActionType.MESSAGE + " insert a message here";
+		case WAIT -> "WAIT";
 		};
 	}
 }
 
-record GameState(
-		int round,
-		MapDefinition map,
-		Map<Coord, Rail> rails,
-		Region[] regions,
-		int myScore,
+record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] regions, int myScore,
 		int opponentScore) {
 	GameState nextRound() {
 		return new GameState(round + 1, map, rails, regions, myScore, opponentScore);
@@ -596,8 +599,7 @@ record GameState(
 			return false;
 		Integer regionId = map.coordToRegionId().get(c);
 		// int regionId = map.terrain()[c.x()][c.y()].regionId();
-		if (regionId != null && regionId != -1 && regions.length > regionId
-				&& regions[regionId].isInstable())
+		if (regionId != null && regionId != -1 && regions.length > regionId && regions[regionId].isInstable())
 			return false;
 		TerrainCell cell = map.terrain()[c.x()][c.y()];
 		return !cell.hasCity() && !cell.hasPOI();
@@ -658,7 +660,7 @@ class GameEngine {
 	private static List<Coord> buildCoords(List<Action> actions) {
 		if (actions == null)
 			return null;
-		return actions.stream().filter(a -> a.type() == ActionType.BUILD_RAIL).map(Action::coord).toList();
+		return actions.stream().filter(a -> a.type() == ActionType.PLACE_TRACKS).map(Action::coord1).toList();
 	}
 }
 
@@ -686,8 +688,7 @@ class RailPathfinder {
 
 	/**
 	 * Returns a list of city pairs that are connected by rails with their shortest
-	 * paths.
-	 * Uses BFS to find shortest paths on the rail network.
+	 * paths. Uses BFS to find shortest paths on the rail network.
 	 */
 	static List<CityConnection> findConnectedCityPairs(GameState gs) {
 		List<CityConnection> connections = new ArrayList<>();
@@ -710,8 +711,8 @@ class RailPathfinder {
 	}
 
 	/**
-	 * Finds the shortest path between two cities using only rails (BFS).
-	 * Returns null if no path exists.
+	 * Finds the shortest path between two cities using only rails (BFS). Returns
+	 * null if no path exists.
 	 */
 	static List<Coord> findShortestRailPath(GameState gs, City from, City to) {
 		Coord start = MatchConstants.coord(from.x(), from.y());
@@ -813,8 +814,7 @@ class NAMOAStar {
 
 	/**
 	 * Finds non-dominated paths from a start city to multiple target cities using
-	 * NAMOA*.
-	 * Returns a map from target city ID to a list of non-dominated paths.
+	 * NAMOA*. Returns a map from target city ID to a list of non-dominated paths.
 	 */
 	static Map<Integer, List<NAMOAPath>> findPaths(GameState gs, City start, List<City> targets) {
 		Map<Integer, List<NAMOAPath>> results = new HashMap<>();
@@ -1031,13 +1031,33 @@ interface AI {
  * (0,0) with ActionType.NONE so tests can assert non-empty output.
  */
 class StupidAI implements AI {
+
+	Random r = new Random();
+
 	@Override
 	public List<Action> compute(GameState gs) {
 		if (gs == null) {
 			gs = GameState.createInitial(MatchConstants.width > 0 ? MatchConstants.width : 26,
 					MatchConstants.height > 0 ? MatchConstants.height : 17);
 		}
-		// Return a WAIT placeholder action
-		return List.of(Action.waitAction());
+		
+		List<Action> result = new ArrayList<Action>();
+
+		City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
+		City randomDesired = gs.map().citiesById().get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
+		Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(), randomDesired.y());
+		result.add(randomAutoPlace);
+
+		Collection<Rail> rails = gs.rails().values();
+		for (Rail rail : rails) {
+			if(rail.owner == RailOwner.OPPONENT) {
+				if(!rail.partOfActiveConnections.isEmpty()) {
+					result.add(Action.disrupt(rail.x, rail.y));
+					break;
+				}
+			}
+		}
+		
+		return result;
 	}
 }
