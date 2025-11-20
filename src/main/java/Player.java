@@ -165,7 +165,9 @@ class Player {
 			for (City city2 : citiesById.values()) {
 				Connection connection = new Connection(city1.id(), city2.id());
 				MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection); // Self-connection
+				MatchConstants.connections.put(city2.id() + "-" + city1.id(), connection); // Self-connection
 				MatchConstants.connectionLookup[city1.id()][city2.id()] = connection;
+				MatchConstants.connectionLookup[city2.id()][city1.id()] = connection;
 			}
 		}
 		// Create initial game state
@@ -228,16 +230,13 @@ class Player {
 							String[] connections = partOfActiveConnectionStr.split(",");
 							for (String conn : connections) {
 								Connection connection = MatchConstants.connections.get(conn);
-								MatchConstants.connectionLookup[connection.fromId()][connection.toId()] = connection;
 								rail.partOfActiveConnections.add(connection);
 								connectionsSet.add(connection);
 
-								if (regionId != null && regionId >= 0 && regionId < regionConnections.length) {
-									if (regionConnections[regionId] == null) {
-										regionConnections[regionId] = new HashSet<>();
-									}
-									regionConnections[regionId].add(connection);
+								if (regionConnections[regionId] == null) {
+									regionConnections[regionId] = new HashSet<>();
 								}
+								regionConnections[regionId].add(connection);
 							}
 						}
 						rails.put(coord, rail);
@@ -245,6 +244,8 @@ class Player {
 				}
 			}
 		}
+
+		Time.debugDuration("Update regions");
 
 		// Update regions once after reading all input
 		for (int i = 0; i < regions.length; i++) {
@@ -1092,7 +1093,6 @@ interface AI {
 			}
 			Print.debug("Region " + region.id() + " has disruption value: " + regionValue);
 		}
-		
 		if (result == null) {
 			Print.debug("No regular disrupt found, going to kill max balance of rails");
 
@@ -1106,7 +1106,7 @@ interface AI {
 
 				double balance = 0;
 				for (Rail rail : gs.rails().values()) {
-					if (region.id() == gs.map().coordToRegionId().get(new Coord(rail.x, rail.y))) {
+					if (region.id() == gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y))) {
 						if (rail.owner == RailOwner.OPPONENT) {
 							balance--;
 						} else if (rail.owner == RailOwner.ME) {
@@ -1116,10 +1116,12 @@ interface AI {
 
 				}
 
-				//Print.debug("Region " + region.id() + " has a raw rail balance of: " + balance);
+				// Print.debug("Region " + region.id() + " has a raw rail balance of: " +
+				// balance);
 
 				balance = balance / (MatchConstants.INSTABILITY_THRESHOLD - region.instability());
-				//Print.debug("Region " + region.id() + " has a modulated rail balance of: " + balance);
+				// Print.debug("Region " + region.id() + " has a modulated rail balance of: " +
+				// balance);
 
 				if (balance < bestBalance) {
 					bestBalance = balance;
@@ -1134,7 +1136,6 @@ interface AI {
 			}
 
 		}
-		
 		Time.debugDuration("Disrupt action computation end");
 		return result;
 	}
@@ -1264,12 +1265,16 @@ class SimpleAI implements AI {
 
 		for (City city : gs.map().citiesById().values()) {
 			if (!city.desiredCityIds().isEmpty()) {
-				// I target only cities I don't have a connection to yet
 				final GameState fgs = gs;
-				List<City> targetCities = city.desiredCityIds().stream()
-						.filter(id -> !fgs.cachedConnections()
-								.contains(MatchConstants.connections.get(city.id() + "-" + id)))
-						.map(id -> fgs.map().citiesById().get(id)).toList();
+
+				// I target only cities I don't have a connection to yet
+				List<City> targetCities = new ArrayList<>();
+				for (int desiredCityId : city.desiredCityIds()) {
+					if (!fgs.cachedConnections()
+							.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
+						targetCities.add(fgs.map().citiesById().get(desiredCityId));
+					}
+				}
 
 				Long duration = Time.getRoundDuration();
 				if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
@@ -1280,6 +1285,7 @@ class SimpleAI implements AI {
 				Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
 						+ targetCities.stream().map(c -> Integer.toString(c.id()))
 								.collect(java.util.stream.Collectors.joining(", ")));
+
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
 				// I store them for later use
