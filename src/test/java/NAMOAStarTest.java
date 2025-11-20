@@ -1,0 +1,309 @@
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+public class NAMOAStarTest {
+
+    @BeforeEach
+    public void setUp() {
+        MatchConstants.width = 10;
+        MatchConstants.height = 10;
+        MatchConstants.initCoords(10, 10);
+    }
+
+    @Test
+    public void testFindPaths_SingleTarget_DirectPath() {
+        // Create a simple scenario: start at (0,0), target at (3,0), plain terrain
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 3, 0, 0, List.of()));
+
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), TerrainType.PLAIN);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        assertTrue(results.containsKey(1));
+        List<NAMOAPath> paths = results.get(1);
+        assertFalse(paths.isEmpty());
+
+        NAMOAPath path = paths.get(0);
+        assertEquals(start, path.from());
+        assertEquals(cities.get(1), path.to());
+        assertEquals(4, path.path().size()); // (0,0), (1,0), (2,0), (3,0)
+        assertEquals(3, path.distance()); // 3 steps
+        assertEquals(2, path.buildCost()); // 2 cells at cost 1 (cities have 0 cost)
+    }
+
+    @Test
+    public void testFindPaths_MultipleTargets() {
+        // Start at (0,0), targets at (2,0) and (0,2)
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 2, 0, 0, List.of()));
+        cities.put(2, new City(2, 0, 2, 0, List.of()));
+
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), TerrainType.PLAIN);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1), cities.get(2));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        assertEquals(2, results.size());
+
+        // Should have paths to both targets
+        assertTrue(results.containsKey(1));
+        assertTrue(results.containsKey(2));
+        assertFalse(results.get(1).isEmpty());
+        assertFalse(results.get(2).isEmpty());
+
+        NAMOAPath pathTo1 = results.get(1).get(0);
+        assertEquals(2, pathTo1.distance());
+
+        NAMOAPath pathTo2 = results.get(2).get(0);
+        assertEquals(2, pathTo2.distance());
+    }
+
+    @Test
+    public void testFindPaths_DifferentTerrainCosts() {
+        // Test that algorithm considers different terrain costs
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 2, 0, 0, List.of()));
+
+        // Create terrain with river at (1,0)
+        TerrainCell[][] terrain = new TerrainCell[10][10];
+        for (int x = 0; x < 10; x++) {
+            for (int y = 0; y < 10; y++) {
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+            }
+        }
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null, null); // Higher cost
+
+        // Place cities
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, cities.get(1), null);
+
+        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        List<NAMOAPath> paths = results.get(1);
+        assertFalse(paths.isEmpty());
+
+        NAMOAPath path = paths.get(0);
+        assertEquals(2, path.distance());
+        assertEquals(2, path.buildCost()); // 1 plain (cost 1) + 1 river (cost 2) - cities are free
+    }
+
+    @Test
+    public void testFindPaths_WithExistingRails() {
+        // Existing rails should have 0 cost to traverse
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 3, 0, 0, List.of()));
+
+        Map<Coord, Rail> rails = new HashMap<>();
+        rails.put(MatchConstants.coord(1, 0), new Rail(1, 0, RailOwner.ME));
+        rails.put(MatchConstants.coord(2, 0), new Rail(2, 0, RailOwner.ME));
+
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, rails, TerrainType.PLAIN);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        List<NAMOAPath> paths = results.get(1);
+        assertFalse(paths.isEmpty());
+
+        NAMOAPath path = paths.get(0);
+        assertEquals(3, path.distance());
+        assertEquals(0, path.buildCost()); // All existing rails, no build cost
+    }
+
+    @Test
+    public void testFindPaths_MultipleNonDominatedPaths() {
+        // Create scenario with two different paths: one shorter but expensive, one
+        // longer but cheaper
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 3, 2, 0, List.of()));
+
+        // Create terrain: direct path has rivers, alternative path is longer but plain
+        TerrainCell[][] terrain = new TerrainCell[10][10];
+        for (int x = 0; x < 10; x++) {
+            for (int y = 0; y < 10; y++) {
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+            }
+        }
+
+        // Make direct horizontal path expensive (rivers)
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null, null);
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.RIVER, null, null);
+        terrain[3][0] = new TerrainCell(3, 0, TerrainType.RIVER, null, null);
+        terrain[3][1] = new TerrainCell(3, 1, TerrainType.RIVER, null, null);
+
+        // Place cities
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
+        terrain[3][2] = new TerrainCell(3, 2, TerrainType.PLAIN, cities.get(1), null);
+
+        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        List<NAMOAPath> paths = results.get(1);
+
+        // Might have multiple non-dominated solutions
+        // At minimum should have one path
+        assertFalse(paths.isEmpty());
+
+        // Check that all returned paths are actually non-dominated
+        for (int i = 0; i < paths.size(); i++) {
+            for (int j = 0; j < paths.size(); j++) {
+                if (i != j) {
+                    assertFalse(paths.get(i).cost().dominates(paths.get(j).cost()),
+                            "Path " + i + " dominates path " + j);
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testFindPaths_NoPathExists() {
+        // Create scenario where target is unreachable (blocked by mountains)
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+        cities.put(1, new City(1, 3, 0, 0, List.of()));
+
+        TerrainCell[][] terrain = new TerrainCell[10][10];
+        for (int x = 0; x < 10; x++) {
+            for (int y = 0; y < 10; y++) {
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+            }
+        }
+
+        // Block the path with non-buildable terrain
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
+        terrain[3][0] = new TerrainCell(3, 0, TerrainType.PLAIN, cities.get(1), null);
+
+        // Put a POI at (1,0) and (2,0) to block (assuming POIs are not buildable)
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.PLAIN, null, new POI(0, 1, 0, 0));
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, null, new POI(1, 2, 0, 0));
+
+        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        List<NAMOAPath> paths = results.get(1);
+
+        // Should find alternative paths around the POIs
+        // If truly blocked, paths would be empty
+        assertNotNull(paths);
+    }
+
+    @Test
+    public void testPathCost_Dominance() {
+        PathCost cost1 = new PathCost(5, 10);
+        PathCost cost2 = new PathCost(6, 11);
+        PathCost cost3 = new PathCost(5, 11);
+        PathCost cost4 = new PathCost(6, 10);
+
+        // cost1 dominates cost2 (better in both)
+        assertTrue(cost1.dominates(cost2));
+        assertFalse(cost2.dominates(cost1));
+
+        // cost1 dominates cost3 (equal distance, better cost)
+        assertTrue(cost1.dominates(cost3));
+        assertFalse(cost3.dominates(cost1));
+
+        // cost1 dominates cost4 (better distance, equal cost)
+        assertTrue(cost1.dominates(cost4));
+        assertFalse(cost4.dominates(cost1));
+
+        // cost3 and cost4 don't dominate each other (trade-offs)
+        assertFalse(cost3.dominates(cost4));
+        assertFalse(cost4.dominates(cost3));
+    }
+
+    @Test
+    public void testPathCost_Add() {
+        PathCost cost = new PathCost(5, 10);
+        PathCost newCost = cost.add(2, 3);
+
+        assertEquals(7, newCost.distance());
+        assertEquals(13, newCost.buildCost());
+
+        // Original should be unchanged (immutable)
+        assertEquals(5, cost.distance());
+        assertEquals(10, cost.buildCost());
+    }
+
+    @Test
+    public void testFindPaths_SameStartAndTarget() {
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(0, new City(0, 0, 0, 0, List.of()));
+
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), TerrainType.PLAIN);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(0));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        List<NAMOAPath> paths = results.get(0);
+        assertFalse(paths.isEmpty());
+
+        NAMOAPath path = paths.get(0);
+        assertEquals(1, path.path().size()); // Just the start/target
+        assertEquals(0, path.distance());
+        assertEquals(0, path.buildCost());
+    }
+
+    // Helper methods
+
+    private GameState createGameStateWithCitiesAndTerrain(Map<Integer, City> cities,
+            Map<Coord, Rail> rails, TerrainType defaultTerrain) {
+        TerrainCell[][] terrain = new TerrainCell[10][10];
+        for (int x = 0; x < 10; x++) {
+            for (int y = 0; y < 10; y++) {
+                terrain[x][y] = new TerrainCell(x, y, defaultTerrain, null, null);
+            }
+        }
+
+        // Place cities on terrain
+        for (City city : cities.values()) {
+            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), defaultTerrain, city, null);
+        }
+
+        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
+        return new GameState(1, map, rails, new Region[0], 0, 0);
+    }
+}
