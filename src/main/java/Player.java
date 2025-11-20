@@ -337,9 +337,8 @@ class MatchConstants {
 
 	public static int cityCount;
 	public static int regionsCount;
-	public static final int INSTABILITY_THRESHOLD = 3;
+	public static final int INSTABILITY_THRESHOLD = 4;
 	public static final int MAX_ACTIONS_PER_TURN = 3;
-	public static final Long MAX_TURN_DURATION_MS = 50L;
 	public static int height;
 	public static int width;
 	private static Coord[][] coords;
@@ -1062,45 +1061,41 @@ interface AI {
 
 	public default Action getDisruptAction(GameState gs) {
 		Action result = null;
+		Map<Connection, Integer> connectionWorthMap = new HashMap<>();
 
-		Time.debugDuration("Entering getDisruptAction");
-
-		double[] regionValues = new double[gs.regions().length];
-
-		// add rails being part of active connections to the city pairs,
-		Collection<Rail> rails = gs.rails().values();
-		for (Rail rail : rails) {
-			int regionId = gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y));
-			if (rail.owner == RailOwner.ME) {
-				regionValues[regionId] += rail.partOfActiveConnections.size();
-			} else if (rail.owner == RailOwner.OPPONENT) {
-				regionValues[regionId] -= rail.partOfActiveConnections.size();
-			}
-		}
-
-		double worstRegion = 0;
-		int worstRegionId = -1;
-
-		for (int i = 0; i < regionValues.length; i++) {
-			double regionValueWithInstability = regionValues[i] / (3 - gs.regions()[i].instability());
-
-			if (regionValues[i] != 0) {
-				Print.debug("Region " + Print.formatIntFixedLenght(2, i) + " is worth "
-						+ Print.formatIntFixedLenght(3, (int) regionValues[i]) + " and with instability is: "
-						+ Print.formatDoubleFixedLenghtAFterComma(4, 2, regionValues[i]));
-				regionValues[i] = regionValueWithInstability;
-				if (regionValues[i] < worstRegion) {
-					worstRegionId = i;
+		for (Connection conn : gs.cachedConnections()) {
+			for (Rail rail : gs.rails().values()) {
+				if (rail.partOfActiveConnections != null && rail.partOfActiveConnections.contains(conn)) {
+					if (rail.owner() == RailOwner.ME) {
+						connectionWorthMap.put(conn, connectionWorthMap.getOrDefault(conn, 0) + 1);
+					} else if (rail.owner() == RailOwner.OPPONENT) {
+						connectionWorthMap.put(conn, connectionWorthMap.getOrDefault(conn, 0) - 1);
+					}
 				}
 			}
+			Print.debug("Connection from " + conn.fromId() + " to " + conn.toId() + " has worth: "
+					+ connectionWorthMap.getOrDefault(conn, 0));
 		}
 
-		if (worstRegionId != -1) {
-			result = Action.disruptRegion(worstRegionId);
+		double worstRegionValue = 0;
+		for (Region region : gs.regions()) {
+			if (region.isInstable() || region.containsACity()) {
+				continue;
+			}
+			double regionValue = 0;
+			for (Connection conn : region.connections()) {
+				regionValue += connectionWorthMap.getOrDefault(conn, 0);
+			}
+			regionValue /= MatchConstants.INSTABILITY_THRESHOLD - region.instability();
+			if (regionValue == 0) {
+				continue;
+			}
+			if (regionValue < worstRegionValue) {
+				worstRegionValue = regionValue;
+				result = Action.disruptRegion(region.id());
+			}
+			Print.debug("Region " + region.id() + " has disruption value: " + regionValue);
 		}
-
-		Time.debugDuration("Exiting getDisruptAction");
-
 		return result;
 	}
 }
@@ -1116,6 +1111,11 @@ class StupidAI implements AI {
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
+		Action disruptAction = getDisruptAction(gs);
+		if (disruptAction != null) {
+			result.add(disruptAction);
+			gs = gs.increaseInstability(disruptAction.id());
+		}
 
 		if (!gs.map().citiesById().isEmpty()) {
 			City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
@@ -1128,11 +1128,6 @@ class StupidAI implements AI {
 					result.add(randomAutoPlace);
 				}
 			}
-		}
-
-		Action disruptAction = getDisruptAction(gs);
-		if (disruptAction != null) {
-			result.add(disruptAction);
 		}
 
 		if (result.isEmpty()) {
