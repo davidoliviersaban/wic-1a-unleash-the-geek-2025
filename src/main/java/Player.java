@@ -8,19 +8,10 @@ import java.util.HashMap;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.HashSet;
 import java.util.Scanner;
-import java.util.stream.Collectors;
 
-// Legacy embedded types removed. See new standalone records (Coord, TerrainCell, City, Region, Rail, Action, GameState, MapDefinition).
-
-/**
- * Core entry point for the skeleton game implementation.
- * <p>
- * Purpose: fast iteration later. All domain-specific concepts (resources,
- * organs, proteins, etc.) have been stripped out. Only timing, grid handling
- * and a placeholder AI with a single dummy action remain.
- */
 class Player {
 
 	// Easy to find switches
@@ -96,7 +87,7 @@ class Player {
 					default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
-				tiles[x][y] = new Tile(x, y, regionId, terrainType, -1, false, null, new ArrayList<>());
+				tiles[x][y] = new Tile(x, y, regionId, terrainType, null);
 				regionIds.add(regionId);
 			}
 		}
@@ -125,7 +116,7 @@ class Player {
 
 			// Embed city in terrain
 			tiles[townX][townY] = new Tile(townX, townY,
-					tiles[townX][townY].regionId(), tiles[townX][townY].type(), -1, false, city, new ArrayList<>());
+					tiles[townX][townY].regionId(), tiles[townX][townY].type(), city);
 		}
 
 		MatchConstants.cityCount = townCount;
@@ -161,7 +152,7 @@ class Player {
 			}
 		}
 
-		MapDefinition mapDef = new MapDefinition(width, height, tiles, terrainType, regionIdArray, cityIdArray,
+		MapDefinition mapDef = new MapDefinition(width, height, terrainType, regionIdArray, cityIdArray,
 				citiesById, regions);
 
 		// Populate connections map for all city pairs
@@ -220,7 +211,7 @@ class Player {
 				Coord coord = MatchConstants.coord(x, y);
 
 				// Recall instability
-				int regionId = result.map().cell(x, y).regionId();
+				int regionId = result.map().regionIdAt(x, y);
 				regionInstability[regionId] = instability;
 
 				if (tracksOwner >= 0) {
@@ -474,11 +465,18 @@ record Connection(int fromId, int toId) implements Comparable<Connection> {
 }
 
 enum TerrainType {
-	PLAIN, RIVER, MOUNTAIN, POI
+	PLAIN, RIVER, MOUNTAIN, POI;
+
+	int buildCost() {
+		return switch (this) {
+			case PLAIN -> 1;
+			case RIVER -> 2;
+			case MOUNTAIN, POI -> 3;
+		};
+	}
 }
 
-record Tile(int x, int y, int regionId, TerrainType type, int tracksOwner, boolean inked, City city,
-		List<Connection> partOfActiveConnections) {
+record Tile(int x, int y, int regionId, TerrainType type, City city) {
 
 	int buildCost() {
 		return switch (type) {
@@ -554,7 +552,6 @@ class Rail {
 record MapDefinition(
 		int width,
 		int height,
-		Tile[][] terrain,
 		TerrainType[][] terrainType,
 		int[][] regionId,
 		int[][] cityId,
@@ -569,12 +566,6 @@ record MapDefinition(
 		Objects.requireNonNull(regions);
 	}
 
-	Tile cell(int x, int y) {
-		// Legacy compatibility: synthesize a Tile view if older code still needs it
-		City city = cityId[x][y] >= 0 ? citiesById[cityId[x][y]] : null;
-		return new Tile(x, y, regionId[x][y], terrainType[x][y], -1, false, city, List.of());
-	}
-
 	int regionIdAt(int x, int y) {
 		return regionId[x][y];
 	}
@@ -586,6 +577,10 @@ record MapDefinition(
 
 	City cityById(int id) {
 		return citiesById[id];
+	}
+
+	int buildCostAt(int x, int y) {
+		return terrainType[x][y].buildCost();
 	}
 }
 
@@ -651,7 +646,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 	Map<Coord, Rail> railsInRegionAsMap(int regionId) {
 		Map<Coord, Rail> filtered = new HashMap<>();
 		for (var e : rails.entrySet()) {
-			int rid = map.cell(e.getKey().x(), e.getKey().y()).regionId();
+			int rid = map.regionIdAt(e.getKey().x(), e.getKey().y());
 			// BugFix: was the opposite logic
 			if (rid == regionId)
 				filtered.put(e.getKey(), e.getValue());
@@ -660,15 +655,12 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 	}
 
 	boolean canBuildAt(Coord c) {
-		if (!c.isInside(map.width(), map.height()))
-			return false;
-
-		int regionId = map.cell(c.x(), c.y()).regionId();
+		int regionId = map.regionIdAt(c.x(), c.y());
 		if (map().regions()[regionId].isInstable())
 			return false;
 
-		Tile cell = map.terrain()[c.x()][c.y()];
-		return !cell.hasCity();
+		// BugFix: adding check on rails presence here that was missing
+		return !(map().cityAt(c.x(), c.y()) != null) && !rails.containsKey(c);
 	}
 
 	GameState increaseInstability(int regionId) {
@@ -707,8 +699,8 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 		Tile[][] tiles = new Tile[width][height];
 		for (int x = 0; x < width; x++) {
 			for (int y = 0; y < height; y++) {
-				tiles[x][y] = new Tile(x, y, -1, TerrainType.PLAIN, -1, false, null, new ArrayList<>()); // Default to
-																											// PLAIN
+				tiles[x][y] = new Tile(x, y, -1, TerrainType.PLAIN, null); // Default to
+																			// PLAIN
 			}
 		}
 		TerrainType[][] terrainTypeArray = new TerrainType[width][height];
@@ -721,7 +713,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 				cityIdArray[x][y] = tiles[x][y].city() != null ? tiles[x][y].city().id() : -1;
 			}
 		}
-		MapDefinition mapDef = new MapDefinition(width, height, tiles, terrainTypeArray, regionIdArray, cityIdArray,
+		MapDefinition mapDef = new MapDefinition(width, height, terrainTypeArray, regionIdArray, cityIdArray,
 				new City[0], new Region[0]);
 		return new GameState(1, mapDef, Map.of(), 0, 0, null);
 	}
@@ -1003,8 +995,7 @@ class NAMOAStar {
 			return 0;
 		}
 		// Otherwise, terrain build cost
-		Tile cell = gs.map().cell(coord.x(), coord.y());
-		return cell.buildCost();
+		return gs.map().terrainType()[coord.x()][coord.y()].buildCost();
 	}
 
 	private static List<Coord> reconstructPath(NAMOANode node) {
@@ -1141,7 +1132,7 @@ interface AI {
 
 				double balance = 0;
 				for (Rail rail : gs.rails().values()) {
-					if (region.id() == gs.map().cell(rail.x(), rail.y()).regionId()) {
+					if (region.id() == gs.map().regionIdAt(rail.x(), rail.y())) {
 						if (rail.owner == RailOwner.OPPONENT) {
 							balance--;
 						} else if (rail.owner == RailOwner.ME) {
@@ -1228,13 +1219,13 @@ class SimpleAI implements AI {
 				}
 				// Only place rail if there isn't one already
 				if (!gs.rails().containsKey(coord)
-						&& gs.map().cell(coord.x(), coord.y()).buildCost() <= remainingBuildCapacity) {
+						&& gs.map().buildCostAt(coord.x(), coord.y()) <= remainingBuildCapacity) {
 					Action buildRailAction = Action.buildRail(coord.x(), coord.y());
 					if (railActions.contains(buildRailAction)) {
 						continue; // Already planned to build here
 					}
 					railActions.add(buildRailAction);
-					remainingBuildCapacity -= gs.map().cell(coord.x(), coord.y()).buildCost();
+					remainingBuildCapacity -= gs.map().buildCostAt(coord.x(), coord.y());
 					Print.debug("Cheapest path from city " + path.from().id() + " to city " + path.to().id()
 							+ " with build cost " + path.buildCost() + " and distance " + path.distance());
 				}
