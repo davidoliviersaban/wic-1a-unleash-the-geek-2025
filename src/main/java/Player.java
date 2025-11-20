@@ -3,7 +3,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Random;
@@ -669,8 +668,19 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 		if (regionId >= 0 && regionId < newRegions.length) {
 			newRegions[regionId] = newRegions[regionId].increaseInstability();
 			if (newRegions[regionId].isInstable()) {
-				Map<Coord, Rail> filtered = railsInRegionAsMap(regionId);
-				return new GameState(round, map, filtered, newRegions, myScore, opponentScore, cachedConnections);
+				Map<Coord, Rail> railsToRemove = railsInRegionAsMap(regionId);
+				Map<Coord, Rail> newRails = new HashMap<>(rails);
+				for (Coord c : railsToRemove.keySet()) {
+					newRails.remove(c);
+					Rail railToRemove = railsToRemove.get(c);
+					// TODO: Fix Me Stupid way to update cached connections
+					if (railToRemove != null && railToRemove.partOfActiveConnections != null) {
+						for (Connection conn : railToRemove.partOfActiveConnections) {
+							cachedConnections.remove(conn);
+						}
+					}
+				}
+				return new GameState(round, map, newRails, newRegions, myScore, opponentScore, cachedConnections);
 			}
 		}
 		return new GameState(round, map, rails, newRegions, myScore, opponentScore, cachedConnections);
@@ -1063,6 +1073,7 @@ interface AI {
 		Action result = null;
 		Map<Connection, Integer> connectionWorthMap = new HashMap<>();
 
+		Time.debugDuration("Disrupt action computation start");
 		for (Connection conn : gs.cachedConnections()) {
 			for (Rail rail : gs.rails().values()) {
 				if (rail.partOfActiveConnections != null && rail.partOfActiveConnections.contains(conn)) {
@@ -1077,6 +1088,7 @@ interface AI {
 					+ connectionWorthMap.getOrDefault(conn, 0));
 		}
 
+		Time.debugDuration("Disrupt action computation end");
 		double worstRegionValue = 0;
 		for (Region region : gs.regions()) {
 			if (region.isInstable() || region.containsACity()) {
@@ -1211,14 +1223,21 @@ class SimpleAI implements AI {
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
 
+		Action disruptAction = getDisruptAction(gs);
+		if (disruptAction != null) {
+			result.add(disruptAction);
+			gs = gs.increaseInstability(disruptAction.id());
+		}
+
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
 		for (City city : gs.map().citiesById().values()) {
 			if (!city.desiredCityIds().isEmpty()) {
 				// I target only cities I don't have a connection to yet
+				final GameState fgs = gs;
 				List<City> targetCities = city.desiredCityIds().stream()
-						.filter(id -> !gs.cachedConnections().contains(new Connection(city.id(), id)))
-						.map(id -> gs.map().citiesById().get(id)).toList();
+						.filter(id -> !fgs.cachedConnections().contains(new Connection(city.id(), id)))
+						.map(id -> fgs.map().citiesById().get(id)).toList();
 
 				Long duration = Time.getRoundDuration();
 				if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
@@ -1240,11 +1259,6 @@ class SimpleAI implements AI {
 		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
 			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
 			result.addAll(railActions);
-		}
-
-		Action disruptAction = getDisruptAction(gs);
-		if (disruptAction != null) {
-			result.add(disruptAction);
 		}
 
 		if (result.isEmpty()) {
