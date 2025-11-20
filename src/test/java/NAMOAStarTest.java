@@ -99,17 +99,17 @@ public class NAMOAStarTest {
         TerrainCell[][] terrain = new TerrainCell[10][10];
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
             }
         }
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null, null); // Higher cost
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null); // Higher cost
 
         // Place cities
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, cities.get(1), null);
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, cities.get(1));
 
         MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -171,22 +171,21 @@ public class NAMOAStarTest {
         TerrainCell[][] terrain = new TerrainCell[10][10];
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
             }
         }
 
         // Make direct horizontal path expensive (rivers)
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null, null);
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.RIVER, null, null);
-        terrain[3][0] = new TerrainCell(3, 0, TerrainType.RIVER, null, null);
-        terrain[3][1] = new TerrainCell(3, 1, TerrainType.RIVER, null, null);
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null);
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.RIVER, null);
+        terrain[3][0] = new TerrainCell(3, 0, TerrainType.RIVER, null);
+        terrain[3][1] = new TerrainCell(3, 1, TerrainType.RIVER, null);
 
         // Place cities
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
-        terrain[3][2] = new TerrainCell(3, 2, TerrainType.PLAIN, cities.get(1), null);
-
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
+        terrain[3][2] = new TerrainCell(3, 2, TerrainType.PLAIN, cities.get(1));
         MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -221,20 +220,20 @@ public class NAMOAStarTest {
         TerrainCell[][] terrain = new TerrainCell[10][10];
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
             }
         }
 
         // Block the path with non-buildable terrain
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0), null);
-        terrain[3][0] = new TerrainCell(3, 0, TerrainType.PLAIN, cities.get(1), null);
+        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
+        terrain[3][0] = new TerrainCell(3, 0, TerrainType.PLAIN, cities.get(1));
 
         // Put a POI at (1,0) and (2,0) to block (assuming POIs are not buildable)
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.PLAIN, null, new POI(0, 1, 0, 0));
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, null, new POI(1, 2, 0, 0));
+        terrain[1][0] = new TerrainCell(1, 0, TerrainType.POI, null);
+        terrain[2][0] = new TerrainCell(2, 0, TerrainType.POI, null);
 
         MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -336,18 +335,17 @@ public class NAMOAStarTest {
                 // Mix of terrain types
                 TerrainType type = (x + y) % 3 == 0 ? TerrainType.RIVER
                         : (x * y) % 5 == 0 ? TerrainType.MOUNTAIN : TerrainType.PLAIN;
-                terrain[x][y] = new TerrainCell(x, y, type, null, null);
+                terrain[x][y] = new TerrainCell(x, y, type, null);
             }
         }
 
         // Place cities
         for (City city : cities.values()) {
-            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city, null);
+            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city);
         }
 
         MapDefinition map = new MapDefinition(30, 20, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
-
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1), cities.get(2), cities.get(3));
 
@@ -377,16 +375,16 @@ public class NAMOAStarTest {
         TerrainCell[][] terrain = new TerrainCell[10][10];
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, defaultTerrain, null, null);
+                terrain[x][y] = new TerrainCell(x, y, defaultTerrain, null);
             }
         }
 
         // Place cities on terrain
         for (City city : cities.values()) {
-            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), defaultTerrain, city, null);
+            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), defaultTerrain, city);
         }
 
         MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        return new GameState(1, map, rails, new Region[0], 0, 0);
+        return new GameState(1, map, rails, new Region[0], 0, 0, null);
     }
 }

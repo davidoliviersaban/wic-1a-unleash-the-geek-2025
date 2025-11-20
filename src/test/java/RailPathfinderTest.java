@@ -29,11 +29,11 @@ public class RailPathfinderTest {
 
 		// Warmup run
 		RailPathfinder.findShortestRailPath(gs, city1, city2);
-		
+
 		long startTime = System.nanoTime();
 		List<Coord> path = RailPathfinder.findShortestRailPath(gs, city1, city2);
 		long duration = (System.nanoTime() - startTime) / 1_000_000;
-		
+
 		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(path);
@@ -74,11 +74,11 @@ public class RailPathfinderTest {
 
 		// Warmup run
 		RailPathfinder.findShortestRailPath(gs, city1, city2);
-		
+
 		long startTime = System.nanoTime();
 		List<Coord> path = RailPathfinder.findShortestRailPath(gs, city1, city2);
 		long duration = (System.nanoTime() - startTime) / 1_000_000;
-		
+
 		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(path);
@@ -169,11 +169,11 @@ public class RailPathfinderTest {
 
 		// Warmup run
 		RailPathfinder.findConnectedCityPairs(gs);
-		
+
 		long startTime = System.nanoTime();
 		List<CityConnection> connections = RailPathfinder.findConnectedCityPairs(gs);
 		long duration = (System.nanoTime() - startTime) / 1_000_000;
-		
+
 		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(connections);
@@ -255,16 +255,16 @@ public class RailPathfinderTest {
 		TerrainCell[][] terrain = new TerrainCell[10][10];
 		for (int x = 0; x < 10; x++) {
 			for (int y = 0; y < 10; y++) {
-				terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null, null);
+				terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
 			}
 		}
 
 		// Place cities on terrain
 		for (City city : cities.values()) {
-			terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city, null);
+			terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city);
 		}
 
 		MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-		return new GameState(1, map, rails, new Region[0], 0, 0);
+		return new GameState(1, map, rails, new Region[0], 0, 0, null);
 	}
 }
