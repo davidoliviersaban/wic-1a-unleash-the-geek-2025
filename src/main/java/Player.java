@@ -442,7 +442,8 @@ record Coord(int x, int y) {
 record Connection(int fromId, int toId) implements Comparable<Connection> {
 	@Override
 	public int compareTo(Connection other) {
-		if (this.fromId == other.fromId || this.fromId == other.toId) {
+		if (this.fromId == other.fromId && this.toId() == other.toId()
+				|| this.fromId == other.toId && this.toId == other.fromId) {
 			return 0;
 		} else if (this.fromId != other.fromId) {
 			return Integer.compare(this.fromId, other.fromId);
@@ -1285,6 +1286,10 @@ class SimpleAI implements AI {
 						.toList();
 
 				// I compute possible paths to those target cities
+				Long duration = Time.getRoundDuration();
+				Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
+						+ targetCities.stream().map(c -> Integer.toString(c.id()))
+								.collect(java.util.stream.Collectors.joining(", ")));
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
 				// I store them for later use
