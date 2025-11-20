@@ -1,5 +1,6 @@
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -11,6 +12,7 @@ import java.util.LinkedList;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Scanner;
 import java.util.stream.Collectors;
 
@@ -127,6 +129,8 @@ class Player {
 			citiesById.put(townId, city);
 
 			// Embed city in terrain
+
+			MatchConstants.cityList.add(city);
 			terrain[townX][townY] = new TerrainCell(townX, townY, terrain[townX][townY].type(), city);
 		}
 
@@ -310,6 +314,7 @@ class MatchConstants {
 	public static int height;
 	public static int width;
 	private static Coord[][] coords;
+	public static List<City> cityList = new ArrayList<City>();
 
 	public static Coord coord(int x, int y) {
 		return coords[x][y];
@@ -487,6 +492,15 @@ record Region(int id, int instability) {
 	Region increaseInstability() {
 		return new Region(id, instability + 1);
 	}
+
+	boolean containsACity() {
+		for (City city : MatchConstants.cityList) {
+			if (city.regionId() == id) {
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 enum RailOwner {
@@ -562,12 +576,12 @@ record Action(ActionType type, Coord coord1, Coord coord2) {
 	@Override
 	public String toString() {
 		return switch (type) {
-			case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
-			case AUTOPLACE ->
-				ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
-			case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
-			case MESSAGE -> ActionType.MESSAGE + " insert a message here";
-			case WAIT -> "WAIT";
+		case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
+		case AUTOPLACE ->
+			ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
+		case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
+		case MESSAGE -> ActionType.MESSAGE + " insert a message here";
+		case WAIT -> "WAIT";
 		};
 	}
 }
@@ -1050,6 +1064,39 @@ record NAMOAPath(City from, City to, List<Coord> path, PathCost cost) {
 
 // GameEngine moved to its own file
 
+
+	class CityPair {
+		City origin;
+		City destination;
+
+		public CityPair(City origin, City destination) {
+			super();
+			this.origin = origin;
+			this.destination = destination;
+		}
+
+		@Override
+		public int hashCode() {
+			final int prime = 31;
+			int result = 1;
+			result = prime * result + getEnclosingInstance().hashCode();
+			result = prime * result + Objects.hash(destination, origin);
+			return result;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj)
+				return true;
+			if (obj == null)
+				return false;
+			if (getClass() != obj.getClass())
+				return false;
+			CityPair other = (CityPair) obj;
+			return Objects.equals(destination, other.destination) && Objects.equals(origin, other.origin);
+		}
+	}
+
 interface AI {
 
 	// Will compute an Action from a provided GameState which is going to stay
@@ -1102,15 +1149,10 @@ class StupidAI implements AI {
 				}
 			}
 		}
-
-		Collection<Rail> rails = gs.rails().values();
-		for (Rail rail : rails) {
-			if (rail.owner == RailOwner.OPPONENT) {
-				if (!rail.partOfActiveConnections.isEmpty()) {
-					result.add(Action.disrupt(rail.x, rail.y));
-					break;
-				}
-			}
+    		
+		Action disruptAction = getDisruptAction(gs);
+		if (disruptAction != null) {
+			result.add(disruptAction);
 		}
 
 		if (result.isEmpty()) {
@@ -1182,15 +1224,10 @@ class SimpleAI implements AI {
 			Action autoPlaceAction = Action.autoPlace(start.x(), start.y(), end.x(), end.y());
 			result.add(autoPlaceAction);
 		}
-
-		Collection<Rail> rails = gs.rails().values();
-		for (Rail rail : rails) {
-			if (rail.owner == RailOwner.OPPONENT) {
-				if (!rail.partOfActiveConnections.isEmpty()) {
-					result.add(Action.disrupt(rail.x, rail.y));
-					break;
-				}
-			}
+		
+		Action disruptAction = getDisruptAction(gs);
+		if (disruptAction != null) {
+			result.add(disruptAction);
 		}
 
 		if (result.isEmpty()) {
@@ -1199,4 +1236,82 @@ class SimpleAI implements AI {
 
 		return result;
 	}
+
+
+	Action getDisruptAction(GameState gs) {
+		Action result = null;
+
+		Map<CityPair, Integer> cityPairs = new HashMap<StupidAI.CityPair, Integer>();
+
+		// Builds the map of city pairs
+		for (City origin : gs.map().citiesById().values()) {
+			for (Integer destinationId : origin.desiredCityIds()) {
+				City destination = gs.map().citiesById().get(destinationId);
+				cityPairs.put(new CityPair(origin, destination), null);
+			}
+
+		}
+
+		// add rails being part of active connections to the city pairs,
+		Collection<Rail> rails = gs.rails().values();
+		for (Rail rail : rails) {
+			for (Connection connection : rail.partOfActiveConnections) {
+				City origin = gs.map().citiesById().get(connection.fromId());
+				City destination = gs.map().citiesById().get(connection.toId());
+				CityPair cityPair = new CityPair(origin, destination);
+
+				if (cityPairs.get(cityPair) == null) {
+					cityPairs.put(cityPair, 0);
+				}
+				if (rail.owner == RailOwner.ME) {
+					cityPairs.put(cityPair, cityPairs.get(cityPair) + 1);
+				} else if (rail.owner == RailOwner.OPPONENT) {
+					cityPairs.put(cityPair, cityPairs.get(cityPair) - 1);
+				}
+
+			}
+		}
+
+		CityPair worstCityPair = null;
+		int worstConnection = 100000;
+		for (CityPair cityPair : cityPairs.keySet()) {
+			Print.debug("City pair from " + cityPair.origin.id() + " to " + cityPair.destination.id() + " is worth: "
+					+ cityPairs.get(cityPair));
+			if (cityPairs.get(cityPair) != null && cityPairs.get(cityPair) < worstConnection) {
+				worstConnection = cityPairs.get(cityPair);
+				worstCityPair = cityPair;
+			}
+		}
+
+		if (worstCityPair != null && worstConnection < 0) {
+			// Ink the first rail being part of the path and not belonging to a region with
+			// a city
+			for (Rail rail : rails) {
+
+				if (rail.owner == RailOwner.OPPONENT) {
+
+					for (Connection connection : rail.partOfActiveConnections) {
+						City origin = gs.map().citiesById().get(connection.fromId());
+						City destination = gs.map().citiesById().get(connection.toId());
+						CityPair cityPair = new CityPair(origin, destination);
+
+						if (cityPair.equals(worstCityPair)) {
+
+							int regionId = gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y));
+							Region region = gs.regions()[regionId];
+							if (!region.containsACity()) {
+								result = Action.disrupt(rail.x, rail.y);
+							}
+						}
+
+					}
+
+				}
+
+			}
+
+		}
+		return result;
+	}
+
 }
