@@ -1,5 +1,6 @@
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,20 +97,20 @@ public class NAMOAStarTest {
         cities.put(1, new City(1, 2, 0, 0, List.of()));
 
         // Create terrain with river at (1,0)
-        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
+        Tile[][] terrain = new Tile[MatchConstants.width][MatchConstants.height];
         for (int x = 0; x < MatchConstants.width; x++) {
             for (int y = 0; y < MatchConstants.height; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
+                terrain[x][y] = new Tile(x, y, 0, TerrainType.PLAIN, -1, false, null, new ArrayList<>());
             }
         }
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null); // Higher cost
+        terrain[1][0] = new Tile(1, 0, 0, TerrainType.RIVER, -1, false, null, new ArrayList<>()); // Higher cost
 
         // Place cities
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.PLAIN, cities.get(1));
+        terrain[0][0] = new Tile(0, 0, 0, TerrainType.PLAIN, -1, false, cities.get(0), new ArrayList<>());
+        terrain[2][0] = new Tile(2, 0, 0, TerrainType.PLAIN, -1, false, cities.get(1), new ArrayList<>());
 
-        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+        MapDefinition map = new MapDefinition(10, 10, terrain);
+        GameState gs = new GameState(1, map, Map.of(), 0, 0, null);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));

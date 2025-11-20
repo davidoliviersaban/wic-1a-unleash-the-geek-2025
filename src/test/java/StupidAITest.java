@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 
 public class StupidAITest {
 
-	private StupidAI ai;
+	private SimpleAI ai;
 	private GameState gameState;
 
 	@BeforeEach
@@ -14,7 +14,7 @@ public class StupidAITest {
 		MatchConstants.height = 10;
 		MatchConstants.initCoords(10, 10);
 
-		ai = new StupidAI();
+		ai = new SimpleAI();
 		Map<Integer, City> cities = new HashMap<>();
 		cities.put(0, new City(0, 0, 0, 0, List.of()));
 		cities.put(1, new City(1, 2, 0, 0, List.of()));

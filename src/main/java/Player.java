@@ -3,7 +3,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Random;
@@ -104,7 +103,7 @@ class Player {
 
 		// Parse cities (towns)
 		int townCount = in.nextInt();
-		Map<Integer, City> citiesById = new HashMap<>();
+		City[] citiesById = new City[townCount];
 
 		for (int i = 0; i < townCount; i++) {
 			int townId = in.nextInt();
@@ -122,11 +121,9 @@ class Player {
 
 			int regionId = tiles[townX][townY].regionId();
 			City city = new City(townId, townX, townY, regionId, desiredCityIds);
-			citiesById.put(townId, city);
+			citiesById[townId] = city;
 
 			// Embed city in terrain
-
-			MatchConstants.cityList.add(city);
 			tiles[townX][townY] = new Tile(townX, townY,
 					tiles[townX][townY].regionId(), tiles[townX][townY].type(), -1, false, city, new ArrayList<>());
 		}
@@ -138,7 +135,6 @@ class Player {
 		TerrainType[][] terrainType = new TerrainType[width][height];
 		int[][] regionIdArray = new int[width][height];
 		int[][] cityIdArray = new int[width][height];
-		City[] citiesByIdArray = new City[townCount];
 		Region[] regions = new Region[MatchConstants.regionsCount];
 
 		// Collect cells for each region
@@ -146,9 +142,14 @@ class Player {
 			for (int x = 0; x < width; x++) {
 				int regionId = tiles[x][y].regionId();
 				if (regions[regionId] == null) {
-					regions[regionId] = new Region(regionId, 0, new ArrayList<>(), new HashSet<>());
+					regions[regionId] = new Region(regionId, 0, new ArrayList<>(), new HashSet<>(),
+							tiles[x][y].hasCity());
 				}
 				regions[regionId].cells().add(tiles[x][y]);
+				if (tiles[x][y].hasCity()) {
+					regions[regionId] = new Region(regionId, regions[regionId].instability(),
+							regions[regionId].cells(), regions[regionId].connections(), true);
+				}
 			}
 		}
 
@@ -160,18 +161,18 @@ class Player {
 			}
 		}
 
-		for (City city : citiesById.values()) {
-			citiesByIdArray[city.id()] = city;
-		}
-
 		MapDefinition mapDef = new MapDefinition(width, height, tiles, terrainType, regionIdArray, cityIdArray,
-				citiesByIdArray, regions);
+				citiesById, regions);
 
 		// Populate connections map for all city pairs
-		for (City city1 : citiesById.values()) {
+		for (City city1 : citiesById) {
+			if (city1 == null)
+				continue;
 			MatchConstants.connectionLookup = new Connection[townCount][townCount];
 
-			for (City city2 : citiesById.values()) {
+			for (City city2 : citiesById) {
+				if (city2 == null)
+					continue;
 				Connection connection = new Connection(city1.id(), city2.id());
 				MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection); // Self-connection
 				MatchConstants.connections.put(city2.id() + "-" + city1.id(), connection); // Self-connection
@@ -257,9 +258,10 @@ class Player {
 
 		// Update regions once after reading all input
 		for (int i = 0; i < MatchConstants.regionsCount; i++) {
-			List<Tile> existingCells = result.map().regions()[i].cells();
+			Region oldRegion = result.map().regions()[i];
 			Set<Connection> connections = regionConnections[i] != null ? regionConnections[i] : new HashSet<>();
-			result.map().regions()[i] = new Region(i, regionInstability[i], existingCells, connections);
+			result.map().regions()[i] = new Region(oldRegion.id(), regionInstability[i], oldRegion.cells(), connections,
+					oldRegion.hasCity());
 		}
 
 		Time.debugDuration("Finished reading input");
@@ -334,7 +336,6 @@ class MatchConstants {
 	public static int height;
 	public static int width;
 	private static Coord[][] coords;
-	public static List<City> cityList = new ArrayList<City>();
 
 	public static Coord coord(int x, int y) {
 		return coords[x][y];
@@ -502,23 +503,15 @@ record City(int id, int x, int y, int regionId, List<Integer> desiredCityIds) {
 	}
 }
 
-record Region(int id, int instability, List<Tile> cells, Set<Connection> connections) {
+record Region(int id, int instability, List<Tile> cells, Set<Connection> connections, boolean hasCity) {
 	boolean isInstable() {
 		return instability >= MatchConstants.INSTABILITY_THRESHOLD;
 	}
 
 	Region increaseInstability() {
-		return new Region(id, instability + 1, cells, connections);
+		return new Region(id, instability + 1, cells, connections, hasCity);
 	}
 
-	boolean containsACity() {
-		for (City city : MatchConstants.cityList) {
-			if (city.regionId() == id) {
-				return true;
-			}
-		}
-		return false;
-	}
 }
 
 enum RailOwner {
@@ -1118,7 +1111,7 @@ interface AI {
 
 		double worstRegionValue = 0;
 		for (Region region : gs.map().regions()) {
-			if (region.isInstable() || region.containsACity()) {
+			if (region.isInstable() || region.hasCity()) {
 				continue;
 			}
 			double regionValue = 0;
@@ -1142,7 +1135,7 @@ interface AI {
 			double bestBalance = 0;
 			for (Region region : gs.map().regions()) {
 
-				if (!region.connections().isEmpty() || region.isInstable() || region.containsACity()) {
+				if (!region.connections().isEmpty() || region.isInstable() || region.hasCity()) {
 					continue;
 				}
 
