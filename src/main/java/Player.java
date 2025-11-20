@@ -633,8 +633,8 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 		Map<Coord, Rail> filtered = new HashMap<>();
 		for (var e : rails.entrySet()) {
 			Integer rid = map.coordToRegionId().get(e.getKey());
-			// int rid = map.terrain()[e.getKey().x()][e.getKey().y()].regionId();
-			if (rid == -1 || rid != regionId)
+			// BugFix: was the opposite logic
+			if (rid == regionId)
 				filtered.put(e.getKey(), e.getValue());
 		}
 		return filtered;
