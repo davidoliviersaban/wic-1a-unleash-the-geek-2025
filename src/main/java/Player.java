@@ -1136,8 +1136,11 @@ class SimpleAI implements AI {
 	public NAMOAPath findCheapestPath(GameState gs, Map<Integer, NAMOAPathsForCity> possiblePathsMapFromCityMap) {
 		NAMOAPath cheapestPath = null;
 		for (City city : gs.map().citiesById().values()) {
-			Map<Integer, List<NAMOAPath>> possiblePathsMap = possiblePathsMapFromCityMap.get(city.id())
-					.pathsToTargets();
+			NAMOAPathsForCity namoaPathsForCity = possiblePathsMapFromCityMap.get(city.id());
+			if (namoaPathsForCity == null) {
+				continue;
+			}
+			Map<Integer, List<NAMOAPath>> possiblePathsMap = namoaPathsForCity.pathsToTargets();
 			if (!city.desiredCityIds().isEmpty()) {
 				for (Entry<Integer, List<NAMOAPath>> target : possiblePathsMap.entrySet()) {
 					List<NAMOAPath> path = possiblePathsMap.get(target.getKey());
