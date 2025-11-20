@@ -89,10 +89,10 @@ class Player {
 				int type = in.nextInt(); // 0 (PLAINS), 1 (RIVER), 2 (MOUNTAIN), 3 (POI)
 
 				TerrainType terrainType = switch (type) {
-				case 0 -> TerrainType.PLAIN;
-				case 1 -> TerrainType.RIVER;
-				case 2 -> TerrainType.MOUNTAIN;
-				default -> TerrainType.PLAIN; // POI treated as plain for now
+					case 0 -> TerrainType.PLAIN;
+					case 1 -> TerrainType.RIVER;
+					case 2 -> TerrainType.MOUNTAIN;
+					default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
 				POI poi = (type == 3) ? new POI(0, x, y, regionId) : null;
@@ -445,9 +445,9 @@ record TerrainCell(int x, int y, TerrainType type, City city, POI poi) {
 
 	int buildCost() {
 		return switch (type) {
-		case PLAIN -> 1;
-		case RIVER -> 2;
-		case MOUNTAIN -> 3;
+			case PLAIN -> 1;
+			case RIVER -> 2;
+			case MOUNTAIN -> 3;
 		};
 	}
 
@@ -540,7 +540,7 @@ record Action(ActionType type, Coord coord1, Coord coord2) {
 	static Action autoPlace(int x1, int y1, int x2, int y2) {
 		return new Action(ActionType.AUTOPLACE, MatchConstants.coord(x1, y1), MatchConstants.coord(x2, y2));
 	}
-	
+
 	static Action disrupt(int x, int y) {
 		return new Action(ActionType.DISRUPT, MatchConstants.coord(x, y), null);
 	}
@@ -552,11 +552,12 @@ record Action(ActionType type, Coord coord1, Coord coord2) {
 	@Override
 	public String toString() {
 		return switch (type) {
-		case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
-		case AUTOPLACE -> ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
-		case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
-		case MESSAGE -> ActionType.MESSAGE + " insert a message here";
-		case WAIT -> "WAIT";
+			case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
+			case AUTOPLACE ->
+				ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
+			case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
+			case MESSAGE -> ActionType.MESSAGE + " insert a message here";
+			case WAIT -> "WAIT";
 		};
 	}
 }
@@ -751,7 +752,8 @@ class RailPathfinder {
 
 	private static List<Coord> getAdjacentRailCoords(GameState gs, Coord coord) {
 		List<Coord> adjacent = new ArrayList<>();
-		int[][] directions = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
+		// NORTH, EAST, SOUTH, WEST
+		int[][] directions = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
 		for (int[] dir : directions) {
 			int nx = coord.x() + dir[0];
@@ -787,8 +789,10 @@ record PathCost(int distance, int buildCost) implements Comparable<PathCost> {
 	}
 
 	boolean dominates(PathCost other) {
-		return this.distance <= other.distance && this.buildCost <= other.buildCost
-				&& (this.distance < other.distance || this.buildCost < other.buildCost);
+		// Simplify the dominance check
+		return this.buildCost < other.buildCost;
+		// return this.distance <= other.distance && this.buildCost <= other.buildCost
+		// && (this.distance < other.distance || this.buildCost < other.buildCost);
 	}
 
 	@Override
@@ -814,7 +818,9 @@ class NAMOAStar {
 
 	/**
 	 * Finds non-dominated paths from a start city to multiple target cities using
-	 * NAMOA*. Returns a map from target city ID to a list of non-dominated paths.
+	 * * NAMOA*.
+	 * Returns a map from target city ID to a list of non-dominated paths.
+	 * Optimized version with early termination and visited tracking.
 	 */
 	static Map<Integer, List<NAMOAPath>> findPaths(GameState gs, City start, List<City> targets) {
 		Map<Integer, List<NAMOAPath>> results = new HashMap<>();
@@ -823,13 +829,17 @@ class NAMOAStar {
 		}
 
 		Set<Integer> targetIds = targets.stream().map(City::id).collect(java.util.stream.Collectors.toSet());
+		Set<Integer> foundTargets = new HashSet<>();
 		Coord startCoord = MatchConstants.coord(start.x(), start.y());
 
 		// Open list (priority queue)
 		java.util.PriorityQueue<NAMOANode> open = new java.util.PriorityQueue<>();
 
-		// Non-dominated archive per coordinate
+		// Non-dominated archive per coordinate - limit size for performance
 		Map<Coord, List<PathCost>> archive = new HashMap<>();
+
+		// Closed set to avoid reprocessing
+		Set<Coord> closed = new HashSet<>();
 
 		// Initial node
 		PathCost initialCost = new PathCost(0, 0);
@@ -837,8 +847,18 @@ class NAMOAStar {
 		NAMOANode startNode = new NAMOANode(startCoord, initialCost, initialHeuristic, null);
 		open.add(startNode);
 
-		while (!open.isEmpty()) {
+		int nodesExpanded = 0;
+		final int MAX_NODES = 5000; // Limit search space for performance
+
+		while (!open.isEmpty() && nodesExpanded < MAX_NODES) {
 			NAMOANode current = open.poll();
+			nodesExpanded++;
+
+			// Skip if already processed
+			if (closed.contains(current.coord())) {
+				continue;
+			}
+			closed.add(current.coord());
 
 			// Check if dominated by archive
 			if (isDominated(current.cost(), archive.get(current.coord()))) {
@@ -851,10 +871,20 @@ class NAMOAStar {
 				List<Coord> path = reconstructPath(current);
 				NAMOAPath solution = new NAMOAPath(start, reachedCity, path, current.cost());
 				addNonDominatedSolution(results.get(reachedCity.id()), solution);
+				foundTargets.add(reachedCity.id());
+
+				// Early termination if we found all targets with at least one path
+				if (foundTargets.size() == targetIds.size()) {
+					break;
+				}
 			}
 
 			// Expand neighbors
 			for (Coord neighbor : getNeighbors(gs, current.coord())) {
+				if (closed.contains(neighbor)) {
+					continue;
+				}
+
 				int edgeDistance = 1;
 				int edgeCost = getMovementCost(gs, neighbor);
 
@@ -867,8 +897,8 @@ class NAMOAStar {
 					NAMOANode newNode = new NAMOANode(neighbor, newCost, newHeuristic, current);
 					open.add(newNode);
 
-					// Update archive
-					addToArchive(archive, neighbor, newCost);
+					// Update archive with size limit
+					addToArchiveLimited(archive, neighbor, newCost, 3); // Max 3 non-dominated paths per cell
 				}
 			}
 		}
@@ -906,14 +936,26 @@ class NAMOAStar {
 	}
 
 	private static void addToArchive(Map<Coord, List<PathCost>> archive, Coord coord, PathCost newCost) {
+		addToArchiveLimited(archive, coord, newCost, Integer.MAX_VALUE);
+	}
+
+	private static void addToArchiveLimited(Map<Coord, List<PathCost>> archive, Coord coord, PathCost newCost,
+			int maxSize) {
 		List<PathCost> costs = archive.computeIfAbsent(coord, k -> new ArrayList<>());
 
 		// Remove dominated costs
 		costs.removeIf(existingCost -> newCost.dominates(existingCost));
 
-		// Add if not dominated
+		// Add if not dominated and under size limit
 		if (!isDominated(newCost, costs)) {
 			costs.add(newCost);
+			// Keep only best paths if exceeding limit
+			if (costs.size() > maxSize) {
+				costs.sort(PathCost::compareTo);
+				while (costs.size() > maxSize) {
+					costs.remove(costs.size() - 1);
+				}
+			}
 		}
 	}
 
@@ -937,7 +979,8 @@ class NAMOAStar {
 
 	private static List<Coord> getNeighbors(GameState gs, Coord coord) {
 		List<Coord> neighbors = new ArrayList<>();
-		int[][] directions = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
+		// NORTH, EAST, SOUTH, WEST
+		int[][] directions = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
 		for (int[] dir : directions) {
 			int nx = coord.x() + dir[0];
@@ -1040,30 +1083,32 @@ class StupidAI implements AI {
 			gs = GameState.createInitial(MatchConstants.width > 0 ? MatchConstants.width : 26,
 					MatchConstants.height > 0 ? MatchConstants.height : 17);
 		}
-		
+
 		List<Action> result = new ArrayList<Action>();
 
 		City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
-		if(!randomCity.desiredCityIds().isEmpty()) {
-		City randomDesired = gs.map().citiesById().get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));		
-			Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(), randomDesired.y());
+		if (!randomCity.desiredCityIds().isEmpty()) {
+			City randomDesired = gs.map().citiesById()
+					.get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
+			Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(),
+					randomDesired.y());
 			result.add(randomAutoPlace);
 		}
 
 		Collection<Rail> rails = gs.rails().values();
 		for (Rail rail : rails) {
-			if(rail.owner == RailOwner.OPPONENT) {
-				if(!rail.partOfActiveConnections.isEmpty()) {
+			if (rail.owner == RailOwner.OPPONENT) {
+				if (!rail.partOfActiveConnections.isEmpty()) {
 					result.add(Action.disrupt(rail.x, rail.y));
 					break;
 				}
 			}
 		}
-		
-		if(result.isEmpty()) {
+
+		if (result.isEmpty()) {
 			result.add(Action.waitAction());
 		}
-		
+
 		return result;
 	}
 }

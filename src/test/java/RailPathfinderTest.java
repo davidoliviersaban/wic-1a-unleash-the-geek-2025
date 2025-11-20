@@ -27,7 +27,14 @@ public class RailPathfinderTest {
 		City city1 = gs.map().citiesById().get(0);
 		City city2 = gs.map().citiesById().get(1);
 
+		// Warmup run
+		RailPathfinder.findShortestRailPath(gs, city1, city2);
+		
+		long startTime = System.nanoTime();
 		List<Coord> path = RailPathfinder.findShortestRailPath(gs, city1, city2);
+		long duration = (System.nanoTime() - startTime) / 1_000_000;
+		
+		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(path);
 		assertEquals(4, path.size()); // (0,0), (1,0), (2,0), (3,0)
@@ -65,7 +72,14 @@ public class RailPathfinderTest {
 		City city1 = gs.map().citiesById().get(0);
 		City city2 = gs.map().citiesById().get(1);
 
+		// Warmup run
+		RailPathfinder.findShortestRailPath(gs, city1, city2);
+		
+		long startTime = System.nanoTime();
 		List<Coord> path = RailPathfinder.findShortestRailPath(gs, city1, city2);
+		long duration = (System.nanoTime() - startTime) / 1_000_000;
+		
+		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(path);
 		assertEquals(5, path.size());
@@ -153,7 +167,14 @@ public class RailPathfinderTest {
 
 		GameState gs = createGameStateWithCitiesAndRails(cities, rails);
 
+		// Warmup run
+		RailPathfinder.findConnectedCityPairs(gs);
+		
+		long startTime = System.nanoTime();
 		List<CityConnection> connections = RailPathfinder.findConnectedCityPairs(gs);
+		long duration = (System.nanoTime() - startTime) / 1_000_000;
+		
+		assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
 		assertNotNull(connections);
 		assertEquals(3, connections.size()); // 0-1, 0-2, 1-2

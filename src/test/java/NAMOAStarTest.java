@@ -11,9 +11,9 @@ public class NAMOAStarTest {
 
     @BeforeEach
     public void setUp() {
-        MatchConstants.width = 10;
-        MatchConstants.height = 10;
-        MatchConstants.initCoords(10, 10);
+        MatchConstants.width = 30;
+        MatchConstants.height = 20;
+        MatchConstants.initCoords(30, 20);
     }
 
     @Test
@@ -28,7 +28,14 @@ public class NAMOAStarTest {
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
 
+        // Warmup run
+        NAMOAStar.findPaths(gs, start, targets);
+
+        long startTime = System.nanoTime();
         Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+        long duration = (System.nanoTime() - startTime) / 1_000_000; // Convert to ms
+
+        assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
         assertNotNull(results);
         assertTrue(results.containsKey(1));
@@ -56,7 +63,14 @@ public class NAMOAStarTest {
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1), cities.get(2));
 
+        // Warmup run
+        NAMOAStar.findPaths(gs, start, targets);
+
+        long startTime = System.nanoTime();
         Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+        long duration = (System.nanoTime() - startTime) / 1_000_000;
+
+        assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
         assertNotNull(results);
         assertEquals(2, results.size());
@@ -100,7 +114,14 @@ public class NAMOAStarTest {
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
 
+        // Warmup run
+        NAMOAStar.findPaths(gs, start, targets);
+
+        long startTime = System.nanoTime();
         Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+        long duration = (System.nanoTime() - startTime) / 1_000_000;
+
+        assertTrue(duration < 50, "Pathfinding took " + duration + "ms, expected < 50ms");
 
         assertNotNull(results);
         List<NAMOAPath> paths = results.get(1);
@@ -285,6 +306,68 @@ public class NAMOAStarTest {
         assertEquals(1, path.path().size()); // Just the start/target
         assertEquals(0, path.distance());
         assertEquals(0, path.buildCost());
+    }
+
+    @Test
+    public void testPerformance_RealGameConstraints() {
+        // Test with realistic game constraints: 30x20 grid, 12 cities
+        MatchConstants.width = 30;
+        MatchConstants.height = 20;
+        MatchConstants.initCoords(30, 20);
+
+        Map<Integer, City> cities = new HashMap<>();
+        // Place 12 cities across the map
+        cities.put(0, new City(0, 2, 2, 0, List.of()));
+        cities.put(1, new City(1, 27, 2, 0, List.of()));
+        cities.put(2, new City(2, 2, 17, 0, List.of()));
+        cities.put(3, new City(3, 27, 17, 0, List.of()));
+        cities.put(4, new City(4, 15, 10, 0, List.of()));
+        cities.put(5, new City(5, 8, 5, 0, List.of()));
+        cities.put(6, new City(6, 22, 5, 0, List.of()));
+        cities.put(7, new City(7, 8, 15, 0, List.of()));
+        cities.put(8, new City(8, 22, 15, 0, List.of()));
+        cities.put(9, new City(9, 5, 10, 0, List.of()));
+        cities.put(10, new City(10, 25, 10, 0, List.of()));
+        cities.put(11, new City(11, 15, 2, 0, List.of()));
+
+        TerrainCell[][] terrain = new TerrainCell[30][20];
+        for (int x = 0; x < 30; x++) {
+            for (int y = 0; y < 20; y++) {
+                // Mix of terrain types
+                TerrainType type = (x + y) % 3 == 0 ? TerrainType.RIVER
+                        : (x * y) % 5 == 0 ? TerrainType.MOUNTAIN : TerrainType.PLAIN;
+                terrain[x][y] = new TerrainCell(x, y, type, null, null);
+            }
+        }
+
+        // Place cities
+        for (City city : cities.values()) {
+            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city, null);
+        }
+
+        MapDefinition map = new MapDefinition(30, 20, terrain, cities, Map.of(), 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0);
+
+        City start = cities.get(0);
+        List<City> targets = List.of(cities.get(1), cities.get(2), cities.get(3));
+
+        // Warmup
+        NAMOAStar.findPaths(gs, start, targets);
+
+        long startTime = System.nanoTime();
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+        long duration = (System.nanoTime() - startTime) / 1_000_000;
+
+        assertTrue(duration < 50, "Pathfinding on 30x20 grid with 3 targets took " + duration + "ms, expected < 50ms");
+
+        // Verify we got results
+        assertNotNull(results);
+        assertTrue(results.size() > 0, "Should find at least one path");
+
+        // Reset constants
+        MatchConstants.width = 10;
+        MatchConstants.height = 10;
+        MatchConstants.initCoords(10, 10);
     }
 
     // Helper methods
