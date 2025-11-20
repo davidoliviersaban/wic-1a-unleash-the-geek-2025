@@ -819,9 +819,9 @@ record PathCost(int distance, int buildCost) implements Comparable<PathCost> {
 
 	boolean dominates(PathCost other) {
 		// Simplify the dominance check
-		return this.buildCost < other.buildCost;
-		// return this.distance <= other.distance && this.buildCost <= other.buildCost
-		// && (this.distance < other.distance || this.buildCost < other.buildCost);
+		// return this.buildCost < other.buildCost;
+		return this.distance <= other.distance && this.buildCost <= other.buildCost
+				&& (this.distance < other.distance || this.buildCost < other.buildCost);
 	}
 
 	@Override
