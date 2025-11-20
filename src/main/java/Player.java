@@ -79,8 +79,8 @@ class Player {
 		MatchConstants.initCoords(width, height);
 
 		// Parse terrain grid
-		TerrainCell[][] terrain = new TerrainCell[width][height];
-		Map<Coord, Integer> coordToRegionId = new HashMap<>();
+		Tile[][] tiles = new Tile[width][height];
+
 		Set<Integer> regionIds = new HashSet<>();
 
 		for (int y = 0; y < height; y++) {
@@ -96,8 +96,7 @@ class Player {
 					default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
-				terrain[x][y] = new TerrainCell(x, y, terrainType, null);
-				coordToRegionId.put(MatchConstants.coord(x, y), regionId);
+				tiles[x][y] = new Tile(x, y, regionId, terrainType, -1, false, null, new ArrayList<>());
 				regionIds.add(regionId);
 			}
 		}
@@ -120,40 +119,39 @@ class Player {
 				}
 			}
 
-			Integer regionId = coordToRegionId.get(MatchConstants.coord(townX, townY));
-			City city = new City(townId, townX, townY, regionId != null ? regionId : -1, desiredCityIds);
+			int regionId = tiles[townX][townY].regionId();
+			City city = new City(townId, townX, townY, regionId, desiredCityIds);
 			citiesById.put(townId, city);
 
 			// Embed city in terrain
 
 			MatchConstants.cityList.add(city);
-			terrain[townX][townY] = new TerrainCell(townX, townY, terrain[townX][townY].type(), city);
+			tiles[townX][townY] = new Tile(townX, townY,
+					tiles[townX][townY].regionId(), tiles[townX][townY].type(), -1, false, city, new ArrayList<>());
 		}
 
 		MatchConstants.cityCount = townCount;
 		MatchConstants.regionsCount = regionIds.size();
 
 		// Create initial MapDefinition
-		MapDefinition mapDef = new MapDefinition(width, height, terrain, citiesById, coordToRegionId, regionIds.size());
+		MapDefinition mapDef = new MapDefinition(width, height, tiles, citiesById);
 
 		// Initialize regions array and populate with terrain cells
 		Region[] regions = new Region[regionIds.size()];
-		Map<Integer, List<TerrainCell>> regionCellsMap = new HashMap<>();
+		Map<Integer, List<Tile>> regionCellsMap = new HashMap<>();
 
 		// Collect cells for each region
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				Integer regionId = coordToRegionId.get(MatchConstants.coord(x, y));
-				if (regionId != null) {
-					regionCellsMap.computeIfAbsent(regionId, k -> new ArrayList<>()).add(terrain[x][y]);
-				}
+				int regionId = tiles[x][y].regionId();
+				regionCellsMap.computeIfAbsent(regionId, k -> new ArrayList<>()).add(tiles[x][y]);
 			}
 		}
 
 		// Create regions with their cells
 		for (int id : regionIds) {
 			if (id >= 0 && id < regions.length) {
-				List<TerrainCell> cells = regionCellsMap.getOrDefault(id, new ArrayList<>());
+				List<Tile> cells = regionCellsMap.getOrDefault(id, new ArrayList<>());
 				regions[id] = new Region(id, 0, cells, new HashSet<>());
 			}
 		}
@@ -195,7 +193,6 @@ class Player {
 		Map<Coord, Rail> rails = new HashMap<>(MatchConstants.width * MatchConstants.height);
 		Region[] regions = result.regions().clone();
 		Set<Connection> resetCachedConnectionsSet = new TreeSet<>();
-		Map<Coord, Integer> coordToRegionId = result.map().coordToRegionId();
 
 		@SuppressWarnings("unchecked")
 		Set<Connection>[] regionConnections = new Set[regions.length];
@@ -212,7 +209,7 @@ class Player {
 				Coord coord = MatchConstants.coord(x, y);
 
 				// Recall instability
-				Integer regionId = coordToRegionId.get(coord);
+				int regionId = result.map().cell(x, y).regionId();
 				regionInstability[regionId] = instability;
 
 				if (tracksOwner >= 0) {
@@ -250,7 +247,7 @@ class Player {
 
 		// Update regions once after reading all input
 		for (int i = 0; i < regions.length; i++) {
-			List<TerrainCell> existingCells = regions[i].cells();
+			List<Tile> existingCells = regions[i].cells();
 			Set<Connection> connections = regionConnections[i] != null ? regionConnections[i] : new HashSet<>();
 			regions[i] = new Region(i, regionInstability[i], existingCells, connections);
 		}
@@ -469,11 +466,8 @@ enum TerrainType {
 	PLAIN, RIVER, MOUNTAIN, POI
 }
 
-record TerrainCell(int x, int y, TerrainType type, City city) {
-
-	TerrainCell(int x, int y, TerrainType type) {
-		this(x, y, type, null);
-	}
+record Tile(int x, int y, int regionId, TerrainType type, int tracksOwner, boolean inked, City city,
+		List<Connection> partOfActiveConnections) {
 
 	int buildCost() {
 		return switch (type) {
@@ -498,7 +492,7 @@ record City(int id, int x, int y, int regionId, List<Integer> desiredCityIds) {
 	}
 }
 
-record Region(int id, int instability, List<TerrainCell> cells, Set<Connection> connections) {
+record Region(int id, int instability, List<Tile> cells, Set<Connection> connections) {
 	boolean isInstable() {
 		return instability >= MatchConstants.INSTABILITY_THRESHOLD;
 	}
@@ -554,10 +548,9 @@ class Rail {
 	}
 }
 
-record MapDefinition(int width, int height, TerrainCell[][] terrain, Map<Integer, City> citiesById,
-		Map<Coord, Integer> coordToRegionId, int regionCount) {
+record MapDefinition(int width, int height, Tile[][] terrain, Map<Integer, City> citiesById) {
 
-	TerrainCell cell(int x, int y) {
+	Tile cell(int x, int y) {
 		return terrain[x][y];
 	}
 
@@ -568,6 +561,7 @@ record MapDefinition(int width, int height, TerrainCell[][] terrain, Map<Integer
 	City getCityAt(int x, int y) {
 		return terrain[x][y].city();
 	}
+
 }
 
 record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Comparable<Action> {
@@ -632,7 +626,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 	Map<Coord, Rail> railsInRegionAsMap(int regionId) {
 		Map<Coord, Rail> filtered = new HashMap<>();
 		for (var e : rails.entrySet()) {
-			Integer rid = map.coordToRegionId().get(e.getKey());
+			int rid = map.cell(e.getKey().x(), e.getKey().y()).regionId();
 			// BugFix: was the opposite logic
 			if (rid == regionId)
 				filtered.put(e.getKey(), e.getValue());
@@ -643,11 +637,12 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 	boolean canBuildAt(Coord c) {
 		if (!c.isInside(map.width(), map.height()))
 			return false;
-		Integer regionId = map.coordToRegionId().get(c);
-		// int regionId = map.terrain()[c.x()][c.y()].regionId();
-		if (regionId != null && regionId != -1 && regions.length > regionId && regions[regionId].isInstable())
+
+		int regionId = map.cell(c.x(), c.y()).regionId();
+		if (regions[regionId].isInstable())
 			return false;
-		TerrainCell cell = map.terrain()[c.x()][c.y()];
+
+		Tile cell = map.terrain()[c.x()][c.y()];
 		return !cell.hasCity();
 	}
 
@@ -682,14 +677,16 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] 
 		return new GameState(round, map, rails, regions, myScore, opponentScore, connections);
 	}
 
+	// For testing purposes
 	static GameState createInitial(int width, int height) {
-		TerrainCell[][] terrain = new TerrainCell[width][height];
+		Tile[][] tiles = new Tile[width][height];
 		for (int x = 0; x < width; x++) {
 			for (int y = 0; y < height; y++) {
-				terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN); // Default to PLAIN
+				tiles[x][y] = new Tile(x, y, -1, TerrainType.PLAIN, -1, false, null, new ArrayList<>()); // Default to
+																											// PLAIN
 			}
 		}
-		MapDefinition mapDef = new MapDefinition(width, height, terrain, Map.of(), Map.of(), 0);
+		MapDefinition mapDef = new MapDefinition(width, height, tiles, Map.of());
 		return new GameState(1, mapDef, Map.of(), new Region[0], 0, 0, null);
 	}
 }
@@ -970,7 +967,7 @@ class NAMOAStar {
 			return 0;
 		}
 		// Otherwise, terrain build cost
-		TerrainCell cell = gs.map().cell(coord.x(), coord.y());
+		Tile cell = gs.map().cell(coord.x(), coord.y());
 		return cell.buildCost();
 	}
 
@@ -1108,14 +1105,13 @@ interface AI {
 
 				double balance = 0;
 				for (Rail rail : gs.rails().values()) {
-					if (region.id() == gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y))) {
+					if (region.id() == gs.map().cell(rail.x(), rail.y()).regionId()) {
 						if (rail.owner == RailOwner.OPPONENT) {
 							balance--;
 						} else if (rail.owner == RailOwner.ME) {
 							balance++;
 						}
 					}
-
 				}
 
 				// Print.debug("Region " + region.id() + " has a raw rail balance of: " +
