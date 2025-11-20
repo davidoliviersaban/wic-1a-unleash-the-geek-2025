@@ -158,6 +158,13 @@ class Player {
 			}
 		}
 
+		// Populate connections map for all city pairs
+		for (City city1 : citiesById.values()) {
+			for (City city2 : citiesById.values()) {
+				MatchConstants.connections.put(city1.id() + "-" + city2.id(), new Connection(city1.id(), city2.id()));
+			}
+		}
+
 		// Create initial game state
 		previousGameState = new GameState(1, mapDef, new HashMap<>(), regions, 0, 0, null);
 
@@ -180,7 +187,7 @@ class Player {
 		int myScore = in.nextInt();
 		Time.startRoundTimer();
 		Time.debugDuration("Starting initRound");
-		int foeScore = in.nextInt();		
+		int foeScore = in.nextInt();
 
 		// Update game state from previous round
 		result = previousGameState.withScores(myScore, foeScore);
@@ -189,12 +196,18 @@ class Player {
 		Map<Coord, Rail> rails = new HashMap<>();
 		Region[] regions = result.regions().clone();
 		Set<Connection> connectionsSet = new TreeSet<>();
+		Map<Coord, Integer> coordToRegionId = result.map().coordToRegionId();
 
 		// Reset connections for all regions
 		Map<Integer, Set<Connection>> regionConnectionsMap = new HashMap<>();
 		for (int i = 0; i < regions.length; i++) {
 			regionConnectionsMap.put(i, new HashSet<>());
 		}
+
+		// Track region instability separately to avoid creating Region objects in loop
+		int[] regionInstability = new int[regions.length];
+
+		Time.debugDuration("Starting reading input");
 
 		for (int y = 0; y < MatchConstants.height; y++) {
 			for (int x = 0; x < MatchConstants.width; x++) {
@@ -203,9 +216,17 @@ class Player {
 				boolean inked = in.nextInt() != 0; // true if region is destroyed
 				String partOfActiveConnectionStr = in.next(); // x or town connections like 0-1,1-2
 
+				Coord coord = MatchConstants.coord(x, y);
+				Integer regionId = coordToRegionId.get(coord);
+
+				// Store instability for later
+				if (regionId != null && regionId < regionInstability.length) {
+					regionInstability[regionId] = instability;
+				}
+
 				// Update rails
 				if (tracksOwner >= 0) {
-					RailOwner owner = RailOwner.NONE;
+					RailOwner owner;
 					if (tracksOwner == ME) {
 						owner = RailOwner.ME;
 					} else if (tracksOwner == OPP) {
@@ -219,44 +240,41 @@ class Player {
 					if (owner != RailOwner.NONE) {
 						Rail rail = new Rail(x, y, owner);
 						rail.partOfActiveConnections = new ArrayList<>();
-						if (!partOfActiveConnectionStr.equals("x")) {
+
+						if (partOfActiveConnectionStr.charAt(0) != 'x') {
 							String[] connections = partOfActiveConnectionStr.split(",");
 							for (String conn : connections) {
-								String[] ids = conn.split("-");
-								Connection connection = new Connection(Integer.parseInt(ids[0]),
-										Integer.parseInt(ids[1]));
-								rail.partOfActiveConnections.add(connection);
-								connectionsSet.add(connection);
+								Connection connection = MatchConstants.connections.get(conn);
+								if (connection != null) {
+									rail.partOfActiveConnections.add(connection);
+									connectionsSet.add(connection);
 
-								// Add connection to region
-								Integer regionId = result.map().coordToRegionId().get(MatchConstants.coord(x, y));
-								if (regionId != null && regionConnectionsMap.containsKey(regionId)) {
-									regionConnectionsMap.get(regionId).add(connection);
+									// Add connection to region
+									if (regionId != null && regionConnectionsMap.containsKey(regionId)) {
+										regionConnectionsMap.get(regionId).add(connection);
+									}
 								}
 							}
 						}
-						rails.put(MatchConstants.coord(x, y), rail);
+						rails.put(coord, rail);
 					}
-				}
-
-				// Update region instability
-				Integer regionId = result.map().coordToRegionId().get(MatchConstants.coord(x, y));
-				if (regionId != null && regionId >= 0 && regionId < regions.length) {
-					// Preserve the cells list from the previous region
-					List<TerrainCell> existingCells = regions[regionId] != null ? regions[regionId].cells()
-							: new ArrayList<>();
-					Set<Connection> regionConnections = regionConnectionsMap.getOrDefault(regionId, new HashSet<>());
-					regions[regionId] = new Region(regionId, instability, existingCells, regionConnections);
 				}
 			}
 		}
-		
+
+		// Update regions once after reading all input
+		for (int i = 0; i < regions.length; i++) {
+			List<TerrainCell> existingCells = regions[i].cells();
+			Set<Connection> regionConnections = regionConnectionsMap.getOrDefault(i, new HashSet<>());
+			regions[i] = new Region(i, regionInstability[i], existingCells, regionConnections);
+		}
+
 		Time.debugDuration("Finished reading input");
 
 		// Create updated game state
 		result = new GameState(result.round(), result.map(), rails, regions, myScore, foeScore, connectionsSet);
 		Time.debugDuration("Finished initround");
-		
+
 		return result;
 
 	}
@@ -280,8 +298,6 @@ class Player {
 	private static void finalizeRound(List<Action> actions, GameState gs) {
 
 		if (!stopGame) {
-
-	
 
 			previousGameState = gs;
 
@@ -315,6 +331,7 @@ class Player {
 // change from one match to another
 class MatchConstants {
 
+	public static Map<String, Connection> connections = new HashMap<>();
 	public static int cityCount;
 	public static int regionsCount;
 	public static final int INSTABILITY_THRESHOLD = 4;
@@ -1068,7 +1085,7 @@ interface AI {
 			Print.debug("Connection from " + conn.fromId() + " to " + conn.toId() + " has worth: "
 					+ connectionWorthMap.getOrDefault(conn, 0));
 		}
-		
+
 		double worstRegionValue = 0;
 		for (Region region : gs.regions()) {
 			if (region.isInstable() || region.containsACity()) {
@@ -1203,7 +1220,7 @@ class SimpleAI implements AI {
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
-		
+
 		Time.debugDuration("Starting SimpleAI compute");
 
 		Action disruptAction = getDisruptAction(gs);
@@ -1212,7 +1229,6 @@ class SimpleAI implements AI {
 			gs = gs.increaseInstability(disruptAction.id());
 		}
 
-		
 		Time.debugDuration("Starting NAMOA");
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
@@ -1221,7 +1237,8 @@ class SimpleAI implements AI {
 				// I target only cities I don't have a connection to yet
 				final GameState fgs = gs;
 				List<City> targetCities = city.desiredCityIds().stream()
-						.filter(id -> !fgs.cachedConnections().contains(new Connection(city.id(), id)))
+						.filter(id -> !fgs.cachedConnections()
+								.contains(MatchConstants.connections.get(city.id() + "-" + id)))
 						.map(id -> fgs.map().citiesById().get(id)).toList();
 
 				Long duration = Time.getRoundDuration();
@@ -1245,13 +1262,13 @@ class SimpleAI implements AI {
 			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
 			result.addAll(railActions);
 		}
-		
+
 		Time.debugDuration("Finished NAMOA");
 
 		if (result.isEmpty()) {
 			result.add(Action.waitAction());
 		}
-		
+
 		Time.debugDuration("Finished compute");
 
 		return result;

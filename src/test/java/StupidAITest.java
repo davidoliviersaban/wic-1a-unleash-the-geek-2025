@@ -10,6 +10,10 @@ public class StupidAITest {
 
 	@BeforeEach
 	public void setUp() {
+		MatchConstants.width = 10;
+		MatchConstants.height = 10;
+		MatchConstants.initCoords(10, 10);
+
 		ai = new StupidAI();
 		Map<Integer, City> cities = new HashMap<>();
 		cities.put(0, new City(0, 0, 0, 0, List.of()));

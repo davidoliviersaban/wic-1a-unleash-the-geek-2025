@@ -393,7 +393,8 @@ public class NAMOAStarTest {
         terrain[15][3] = new TerrainCell(15, 3, TerrainType.PLAIN, cities.get(1));
         terrain[18][1] = new TerrainCell(18, 1, TerrainType.PLAIN, cities.get(2));
 
-        MapDefinition map = new MapDefinition(MatchConstants.width, MatchConstants.height, terrain, cities, Map.of(), 0);
+        MapDefinition map = new MapDefinition(MatchConstants.width, MatchConstants.height, terrain, cities, Map.of(),
+                0);
         GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
 
         City start = cities.get(1);
@@ -462,7 +463,17 @@ public class NAMOAStarTest {
             terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), defaultTerrain, city);
         }
 
+        // Initialize connections map and city list for all city pairs
+        MatchConstants.connections.clear();
+        MatchConstants.cityList.clear();
+        for (City city1 : cities.values()) {
+            MatchConstants.cityList.add(city1);
+            for (City city2 : cities.values()) {
+                MatchConstants.connections.put(city1.id() + "-" + city2.id(), new Connection(city1.id(), city2.id()));
+            }
+        }
+
         MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        return new GameState(1, map, rails, new Region[0], 0, 0, null);
+        return new GameState(1, map, rails, new Region[0], 0, 0, new java.util.HashSet<>());
     }
 }
