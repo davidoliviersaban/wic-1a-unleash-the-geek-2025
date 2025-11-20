@@ -6,9 +6,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Queue;
 import java.util.Random;
-import java.util.LinkedList;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.HashSet;
@@ -588,7 +586,7 @@ record MapDefinition(int width, int height, TerrainCell[][] terrain, Map<Integer
 	}
 }
 
-record Action(ActionType type, Coord coord1, Coord coord2, int id) {
+record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Comparable<Action> {
 	static Action buildRail(int x, int y) {
 		return new Action(ActionType.PLACE_TRACKS, MatchConstants.coord(x, y), null, -1);
 	}
@@ -603,6 +601,11 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) {
 
 	static Action waitAction() {
 		return new Action(ActionType.WAIT, null, null, -1);
+	}
+
+	@Override
+	public int compareTo(Action other) {
+		return toString().compareTo(other.toString());
 	}
 
 	@Override
@@ -743,102 +746,6 @@ enum GameResult {
 // Pathfinding using BFS for shortest rail paths
 
 record CityConnection(City from, City to, List<Coord> path, int distance) {
-}
-
-class RailPathfinder {
-
-	/**
-	 * Returns a list of city pairs that are connected by rails with their shortest
-	 * paths. Uses BFS to find shortest paths on the rail network.
-	 */
-	static List<CityConnection> findConnectedCityPairs(GameState gs) {
-		List<CityConnection> connections = new ArrayList<>();
-		Map<Integer, City> cities = gs.map().citiesById();
-
-		// For each pair of cities, check if they're connected
-		for (City from : cities.values()) {
-			for (City to : cities.values()) {
-				if (from.id() >= to.id())
-					continue; // Avoid duplicates and self-connections
-
-				List<Coord> path = findShortestRailPath(gs, from, to);
-				if (path != null && !path.isEmpty()) {
-					connections.add(new CityConnection(from, to, path, path.size()));
-				}
-			}
-		}
-
-		return connections;
-	}
-
-	/**
-	 * Finds the shortest path between two cities using only rails (BFS). Returns
-	 * null if no path exists.
-	 */
-	static List<Coord> findShortestRailPath(GameState gs, City from, City to) {
-		Coord start = MatchConstants.coord(from.x(), from.y());
-		Coord goal = MatchConstants.coord(to.x(), to.y());
-
-		if (start.equals(goal))
-			return List.of(start);
-
-		Map<Coord, Coord> cameFrom = new HashMap<>();
-		Queue<Coord> queue = new LinkedList<>();
-		Set<Coord> visited = new HashSet<>();
-
-		queue.add(start);
-		visited.add(start);
-		cameFrom.put(start, null);
-
-		while (!queue.isEmpty()) {
-			Coord current = queue.poll();
-
-			if (current.equals(goal)) {
-				return reconstructPath(cameFrom, current);
-			}
-
-			// Check all 4 adjacent cells
-			for (Coord neighbor : getAdjacentRailCoords(gs, current)) {
-				if (!visited.contains(neighbor)) {
-					visited.add(neighbor);
-					cameFrom.put(neighbor, current);
-					queue.add(neighbor);
-				}
-			}
-		}
-
-		return null; // No path found
-	}
-
-	private static List<Coord> getAdjacentRailCoords(GameState gs, Coord coord) {
-		List<Coord> adjacent = new ArrayList<>();
-		// NORTH, EAST, SOUTH, WEST
-		int[][] directions = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
-
-		for (int[] dir : directions) {
-			int nx = coord.x() + dir[0];
-			int ny = coord.y() + dir[1];
-
-			if (MatchConstants.isValid(nx, ny)) {
-				Coord neighbor = MatchConstants.coord(nx, ny);
-				// Check if there's a rail at this position (or it's the destination city)
-				if (gs.rails().containsKey(neighbor) || gs.map().hasCity(nx, ny)) {
-					adjacent.add(neighbor);
-				}
-			}
-		}
-
-		return adjacent;
-	}
-
-	private static List<Coord> reconstructPath(Map<Coord, Coord> cameFrom, Coord current) {
-		List<Coord> path = new ArrayList<>();
-		while (current != null) {
-			path.add(0, current);
-			current = cameFrom.get(current);
-		}
-		return path;
-	}
 }
 
 // NAMOA* (Non-dominated Archive Multi-Objective A*) pathfinding
@@ -1177,12 +1084,14 @@ interface AI {
 		for (int i = 0; i < regionValues.length; i++) {
 			double regionValueWithInstability = regionValues[i] / (3 - gs.regions()[i].instability());
 
-			Print.debug("Region " + Print.formatIntFixedLenght(2, i) + " is worth "
-					+ Print.formatIntFixedLenght(3, (int) regionValues[i]) + " and with instability is: "
-					+ Print.formatDoubleFixedLenghtAFterComma(4, 2, regionValues[i]));
-			regionValues[i] = regionValueWithInstability;
-			if (regionValues[i] < worstRegion) {
-				worstRegionId = i;
+			if (regionValues[i] != 0) {
+				Print.debug("Region " + Print.formatIntFixedLenght(2, i) + " is worth "
+						+ Print.formatIntFixedLenght(3, (int) regionValues[i]) + " and with instability is: "
+						+ Print.formatDoubleFixedLenghtAFterComma(4, 2, regionValues[i]));
+				regionValues[i] = regionValueWithInstability;
+				if (regionValues[i] < worstRegion) {
+					worstRegionId = i;
+				}
 			}
 		}
 
@@ -1275,25 +1184,32 @@ class SimpleAI implements AI {
 	 * Builds rails along a path where rails don't already exist.
 	 * Returns a list of PLACE_TRACKS actions for cells that need rails.
 	 */
-	public List<Action> buildRailsAlongPath(GameState gs, NAMOAPath path) {
-		List<Action> railActions = new ArrayList<>();
+	public List<Action> buildRailsAlongPath(GameState gs, List<NAMOAPath> paths) {
+		Set<Action> railActions = new TreeSet<>();
 		int remainingBuildCapacity = MatchConstants.MAX_ACTIONS_PER_TURN;
 
-		for (Coord coord : path.path()) {
-			// Skip cities (start and end points)
-			if (gs.map().hasCity(coord.x(), coord.y())) {
-				continue;
-			}
-
-			// Only place rail if there isn't one already
-			if (!gs.rails().containsKey(coord)
-					&& gs.map().cell(coord.x(), coord.y()).buildCost() <= remainingBuildCapacity) {
-				railActions.add(Action.buildRail(coord.x(), coord.y()));
-				remainingBuildCapacity -= gs.map().cell(coord.x(), coord.y()).buildCost();
+		for (NAMOAPath path : paths) {
+			for (Coord coord : path.path()) {
+				// Skip cities (start and end points)
+				if (gs.map().hasCity(coord.x(), coord.y())) {
+					continue;
+				}
+				// Only place rail if there isn't one already
+				if (!gs.rails().containsKey(coord)
+						&& gs.map().cell(coord.x(), coord.y()).buildCost() <= remainingBuildCapacity) {
+					Action buildRailAction = Action.buildRail(coord.x(), coord.y());
+					if (railActions.contains(buildRailAction)) {
+						continue; // Already planned to build here
+					}
+					railActions.add(buildRailAction);
+					remainingBuildCapacity -= gs.map().cell(coord.x(), coord.y()).buildCost();
+					Print.debug("Cheapest path from city " + path.from().id() + " to city " + path.to().id()
+							+ " with build cost " + path.buildCost() + " and distance " + path.distance());
+				}
 			}
 		}
 
-		return railActions;
+		return railActions.stream().toList();
 	}
 
 	@Override
@@ -1310,7 +1226,7 @@ class SimpleAI implements AI {
 						.map(id -> gs.map().citiesById().get(id)).toList();
 
 				Long duration = Time.getRoundDuration();
-				if (targetCities.isEmpty() || duration > MatchConstants.MAX_TURN_DURATION_MS) {
+				if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
 					Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id());
 					continue;
 				}
@@ -1327,16 +1243,8 @@ class SimpleAI implements AI {
 
 		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
 		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
-			for (NAMOAPath path : cheapestPaths) {
-				if (result.size() >= MatchConstants.MAX_ACTIONS_PER_TURN) {
-					break;
-				}
-				Print.debug("Cheapest path from city " + path.from().id() + " to city " + path.to().id()
-						+ " with build cost " + path.buildCost() + " and distance " + path.distance());
-				// Build rails along the path instead of using AUTOPLACE
-				List<Action> railActions = buildRailsAlongPath(gs, path);
-				result.addAll(railActions);
-			}
+			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
+			result.addAll(railActions);
 		}
 
 		Action disruptAction = getDisruptAction(gs);

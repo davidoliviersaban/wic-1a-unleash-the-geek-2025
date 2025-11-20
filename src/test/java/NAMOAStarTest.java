@@ -369,6 +369,83 @@ public class NAMOAStarTest {
         MatchConstants.initCoords(10, 10);
     }
 
+    @Test
+    public void testDirectionPriority_NorthThenEast() {
+        // Test that pathfinding follows direction priority: NORTH, EAST, SOUTH, WEST
+        // From City1(15,3) to City2(18,1) should go: N, N, E, E, E
+        // Setup a 20x10 grid
+        MatchConstants.width = 20;
+        MatchConstants.height = 10;
+        MatchConstants.initCoords(20, 10);
+
+        Map<Integer, City> cities = new HashMap<>();
+        cities.put(1, new City(1, 15, 3, 0, List.of(2)));
+        cities.put(2, new City(2, 18, 1, 0, List.of()));
+
+        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
+        for (int x = 0; x < MatchConstants.width; x++) {
+            for (int y = 0; y < MatchConstants.height; y++) {
+                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
+            }
+        }
+
+        // Place cities
+        terrain[15][3] = new TerrainCell(15, 3, TerrainType.PLAIN, cities.get(1));
+        terrain[18][1] = new TerrainCell(18, 1, TerrainType.PLAIN, cities.get(2));
+
+        MapDefinition map = new MapDefinition(MatchConstants.width, MatchConstants.height, terrain, cities, Map.of(), 0);
+        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+
+        City start = cities.get(1);
+        List<City> targets = List.of(cities.get(2));
+
+        Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, targets);
+
+        assertNotNull(results);
+        assertTrue(results.containsKey(2));
+        List<NAMOAPath> paths = results.get(2);
+        assertFalse(paths.isEmpty());
+
+        NAMOAPath path = paths.get(0);
+        assertEquals(start, path.from());
+        assertEquals(cities.get(2), path.to());
+
+        // Verify the path coordinates - with NORTH, EAST, SOUTH, WEST priority
+        // Actual path: (15,3) -> (15,2) -> (16,2) -> (17,2) -> (17,1) -> (18,1)
+        // This follows: N, E, E, S, E
+        List<Coord> pathCoords = path.path();
+        assertEquals(6, pathCoords.size(), "Path should have 6 coordinates");
+
+        // Verify start position
+        assertEquals(15, pathCoords.get(0).x());
+        assertEquals(3, pathCoords.get(0).y());
+
+        // Step 1: North to (15,2)
+        assertEquals(15, pathCoords.get(1).x());
+        assertEquals(2, pathCoords.get(1).y());
+
+        // Step 2: East to (16,2)
+        assertEquals(16, pathCoords.get(2).x());
+        assertEquals(2, pathCoords.get(2).y());
+
+        // Step 3: East to (17,2)
+        assertEquals(17, pathCoords.get(3).x());
+        assertEquals(2, pathCoords.get(3).y());
+
+        // Step 4: South to (17,1)
+        assertEquals(17, pathCoords.get(4).x());
+        assertEquals(1, pathCoords.get(4).y());
+
+        // Step 5: East to destination (18,1)
+        assertEquals(18, pathCoords.get(5).x());
+        assertEquals(1, pathCoords.get(5).y());
+
+        // Reset constants
+        MatchConstants.width = 10;
+        MatchConstants.height = 10;
+        MatchConstants.initCoords(10, 10);
+    }
+
     // Helper methods
 
     public static GameState createGameStateWithCitiesAndTerrain(Map<Integer, City> cities,
