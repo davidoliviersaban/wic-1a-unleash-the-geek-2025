@@ -1001,34 +1001,37 @@ interface AI {
 		}
 
 		double worstRegionValue = 0;
+		List<Region> regionCandidateToDisrupt = new ArrayList<Region>();
 		for (Region region : gs.map().regions()) {
 			if (region.isInstable() || region.hasCity()) {
 				continue;
 			}
 			double regionValue = 0;
+			int rawRegionValue = 0;
 			for (Connection conn : region.connections()) {
 				regionValue += connectionWorthMap.getOrDefault(conn, 0);
 			}
+			rawRegionValue = (int) regionValue;
 			regionValue /= MatchConstants.INSTABILITY_THRESHOLD - region.instability();
-			if (regionValue == 0) {
-				continue;
-			}
+			
 			if (regionValue < worstRegionValue) {
 				worstRegionValue = regionValue;
-				result = Action.disruptRegion(region.id());
+				regionCandidateToDisrupt.clear();
+				regionCandidateToDisrupt.add(region);				
+			} else if (regionValue == worstRegionValue) {				
+				regionCandidateToDisrupt.add(region);				
 			}
-			Print.debug("Region " + region.id() + " has disruption value: " + regionValue);
+			
+			Print.debug("Region " + region.id() + " has raw value: " + rawRegionValue + " and value: " + regionValue);
 		}
-		if (result == null) {
-			Print.debug("No regular disrupt found, going to kill max balance of rails");
+		if (regionCandidateToDisrupt.isEmpty()) {
+			Print.debug("Nothing to disrupt, sorry mate");
+		} else {										
+			Print.debug("One or several regions candidate to disrupt, going to kill based on max balance of rails");
 
 			Region regionToKill = null;
 			double bestBalance = 0;
-			for (Region region : gs.map().regions()) {
-
-				if (!region.connections().isEmpty() || region.isInstable() || region.hasCity()) {
-					continue;
-				}
+			for (Region region : regionCandidateToDisrupt) {
 
 				double balance = 0;
 				for (Rail rail : gs.rails().values()) {
@@ -1058,6 +1061,8 @@ interface AI {
 			if (regionToKill != null) {
 				Print.debug("Going to kill " + bestBalance + " balanced rails from region " + regionToKill.id());
 				result = Action.disruptRegion(regionToKill.id());
+			} else {
+				Print.debug("I guess there's a bug");
 			}
 
 		}
