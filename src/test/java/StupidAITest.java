@@ -1,7 +1,4 @@
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +11,12 @@ public class StupidAITest {
 	@BeforeEach
 	public void setUp() {
 		ai = new StupidAI();
+		Map<Integer, City> cities = new HashMap<>();
+		cities.put(0, new City(0, 0, 0, 0, List.of()));
+		cities.put(1, new City(1, 2, 0, 0, List.of()));
+		cities.put(2, new City(2, 0, 2, 0, List.of()));
+
+		gameState = NAMOAStarTest.createGameStateWithCitiesAndTerrain(cities, Map.of(), TerrainType.PLAIN);
 	}
 
 	@Test
