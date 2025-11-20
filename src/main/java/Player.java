@@ -18,6 +18,9 @@ class Player {
 	public static int ME;
 	public static int OPP;
 
+	public static final int GET_TOP_PATHS_COUNT = 1;
+	public static final boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = true;
+
 	// Magic numbers
 
 	// AIs
@@ -1072,20 +1075,20 @@ interface AI {
 			}
 			rawRegionValue = (int) regionValue;
 			regionValue /= MatchConstants.INSTABILITY_THRESHOLD - region.instability();
-			
+
 			if (regionValue < worstRegionValue) {
 				worstRegionValue = regionValue;
 				regionCandidateToDisrupt.clear();
-				regionCandidateToDisrupt.add(region);				
-			} else if (regionValue == worstRegionValue) {				
-				regionCandidateToDisrupt.add(region);				
+				regionCandidateToDisrupt.add(region);
+			} else if (regionValue == worstRegionValue) {
+				regionCandidateToDisrupt.add(region);
 			}
-			
+
 			Print.debug("Region " + region.id() + " has raw value: " + rawRegionValue + " and value: " + regionValue);
 		}
 		if (regionCandidateToDisrupt.isEmpty()) {
 			Print.debug("Nothing to disrupt, sorry mate");
-		} else {										
+		} else {
 			Print.debug("One or several regions candidate to disrupt, going to kill based on max balance of rails");
 
 			Region regionToKill = null;
@@ -1174,29 +1177,86 @@ class SimpleAI implements AI {
 	public List<Action> buildRailsAlongPath(GameState gs, List<NAMOAPath> paths) {
 		Set<Action> railActions = new TreeSet<>();
 		int remainingBuildCapacity = MatchConstants.MAX_ACTIONS_PER_TURN;
+		Set<Coord> builtCoords = new HashSet<>();
+		Set<Integer> builtInRegion = new HashSet<>();
 
 		for (NAMOAPath path : paths) {
+			List<Coord> possibleBuildCoords = new ArrayList<>();
+
 			for (Coord coord : path.path()) {
 				// Skip cities (start and end points)
-				if (gs.map().cityAt(coord.x(), coord.y()) != null) {
+				if (gs.canBuildAt(coord) == false) {
 					continue;
 				}
+
 				// Only place rail if there isn't one already
 				if (!gs.rails().containsKey(coord)
-						&& gs.map().buildCostAt(coord.x(), coord.y()) <= remainingBuildCapacity) {
-					Action buildRailAction = Action.buildRail(coord.x(), coord.y());
-					if (railActions.contains(buildRailAction)) {
-						continue; // Already planned to build here
+						&& gs.map().buildCostAt(coord.x(), coord.y()) <= remainingBuildCapacity
+						&& !builtCoords.contains(coord)) {
+					possibleBuildCoords.add(coord);
+				}
+			}
+
+			if (possibleBuildCoords.isEmpty()) {
+				Print.debug("No possible build coords along path from city " + path.from().id() + " to city "
+						+ path.to().id());
+				continue;
+			}
+
+			// Try to build as many rails as possible along the path
+			for (int i = 0; i < MatchConstants.MAX_ACTIONS_PER_TURN; i++) {
+				builtInRegion.clear();
+
+				// Build rails in regions we haven't built in this turn yet
+				for (Coord buildCoord : possibleBuildCoords) {
+					int regionId = gs.regionIdAt(buildCoord);
+					if (Player.BUILD_ONLY_IN_ONE_REGION_PER_TURN && builtInRegion.contains(regionId)) {
+						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+								+ ") as we already built in region " + regionId + " this turn");
+						continue;
 					}
-					railActions.add(buildRailAction);
-					remainingBuildCapacity -= gs.map().buildCostAt(coord.x(), coord.y());
-					Print.debug("Cheapest path from city " + path.from().id() + " to city " + path.to().id()
-							+ " with build cost " + path.buildCost() + " and distance " + path.distance());
+					if (builtCoords.contains(buildCoord)) {
+						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+								+ ") as we already built there this turn");
+						continue;
+					}
+					if (gs.map().buildCostAt(buildCoord.x(), buildCoord.y()) > remainingBuildCapacity) {
+						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+								+ ") as not enough remaining build capacity");
+						continue;
+					}
+
+					railActions.add(Action.buildRail(buildCoord.x(), buildCoord.y()));
+					remainingBuildCapacity -= gs.map().buildCostAt(buildCoord.x(), buildCoord.y());
+					builtInRegion.add(regionId); // remember we've built in this region
+					builtCoords.add(buildCoord); // remember we've built here
+
+					Print.debug("Placing rail at (" + buildCoord.x() + "," + buildCoord.y() + ") in region " + regionId
+							+ ", remaining build capacity: " + remainingBuildCapacity);
+
+					if (remainingBuildCapacity <= 0) {
+						Print.debug("No remaining build capacity, stopping rail placement");
+						return railActions.stream().toList();
+					}
 				}
 			}
 		}
 
 		return railActions.stream().toList();
+	}
+
+	public List<NAMOAPath> filterPathsByBuildCost(List<NAMOAPath> paths, int maxBuildCost) {
+		List<NAMOAPath> filtered = new ArrayList<>();
+		for (NAMOAPath path : paths) {
+			if (path.buildCost() <= maxBuildCost) {
+				filtered.add(path);
+			}
+		}
+		return filtered;
+	}
+
+	public List<NAMOAPath> getTopPaths(List<NAMOAPath> paths, int nbPaths) {
+		return paths.subList(0, Math.min(nbPaths, paths.size()));
 	}
 
 	@Override
@@ -1238,6 +1298,17 @@ class SimpleAI implements AI {
 								.collect(java.util.stream.Collectors.joining(", ")));
 
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
+
+				if (Player.GET_TOP_PATHS_COUNT > 0) {
+					Print.debug(
+							"Filtering to keep only the top " + Player.GET_TOP_PATHS_COUNT + " paths per target city");
+					// filter out similar paths to keep only the non-dominated ones
+					for (Entry<Integer, List<NAMOAPath>> entry : possiblePathsMap.entrySet()) {
+						Integer targetCityId = entry.getKey();
+						// I take the first path as is
+						possiblePathsMap.put(targetCityId, getTopPaths(entry.getValue(), Player.GET_TOP_PATHS_COUNT));
+					}
+				}
 
 				// I store them for later use
 				namoaPathsForCityMap.put(city.id(), new NAMOAPathsForCity(city, possiblePathsMap));
