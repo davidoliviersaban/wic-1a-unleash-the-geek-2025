@@ -1259,6 +1259,52 @@ class SimpleAI implements AI {
 		return paths.subList(0, Math.min(nbPaths, paths.size()));
 	}
 
+	public NAMOAPathsForCity findNAMOAPathsForCity(City city, GameState gs) {
+		if (city.desiredCityIds().isEmpty()) {
+			return null;
+		}
+
+		final GameState fgs = gs;
+
+		// I target only cities I don't have a connection to yet
+		List<City> targetCities = new ArrayList<>();
+		for (int desiredCityId : city.desiredCityIds()) {
+			if (!fgs.cachedConnections()
+					.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
+				targetCities.add(fgs.map().citiesById()[desiredCityId]);
+			}
+		}
+
+		Long duration = Time.getRoundDuration();
+		if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
+			Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id());
+			return null;
+		}
+
+		// I compute possible paths to those target cities
+		Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
+				+ targetCities.stream().map(c -> Integer.toString(c.id()))
+						.collect(java.util.stream.Collectors.joining(", ")));
+
+		Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
+
+		if (Player.GET_TOP_PATHS_COUNT > 0) {
+			Print.debug(
+					"Filtering to keep only the top " + Player.GET_TOP_PATHS_COUNT + " paths per target city");
+			// filter out similar paths to keep only the non-dominated ones
+			for (Entry<Integer, List<NAMOAPath>> entry : possiblePathsMap.entrySet()) {
+				Integer targetCityId = entry.getKey();
+				// I take the first path as is
+				List<NAMOAPath> possibleTopPaths = entry.getValue();
+				int nbTopPaths = Math.min(Player.GET_TOP_PATHS_COUNT, possibleTopPaths.size());
+				possiblePathsMap.put(targetCityId, possibleTopPaths.subList(0, nbTopPaths));
+			}
+		}
+
+		// I store them for later use
+		return new NAMOAPathsForCity(city, possiblePathsMap);
+	}
+
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
@@ -1275,43 +1321,10 @@ class SimpleAI implements AI {
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
 		for (City city : gs.map().citiesById()) {
-			if (!city.desiredCityIds().isEmpty()) {
-				final GameState fgs = gs;
-
-				// I target only cities I don't have a connection to yet
-				List<City> targetCities = new ArrayList<>();
-				for (int desiredCityId : city.desiredCityIds()) {
-					if (!fgs.cachedConnections()
-							.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
-						targetCities.add(fgs.map().citiesById()[desiredCityId]);
-					}
-				}
-
-				Long duration = Time.getRoundDuration();
-				if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
-					Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id());
-					continue;
-				}
-				// I compute possible paths to those target cities
-				Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
-						+ targetCities.stream().map(c -> Integer.toString(c.id()))
-								.collect(java.util.stream.Collectors.joining(", ")));
-
-				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
-
-				if (Player.GET_TOP_PATHS_COUNT > 0) {
-					Print.debug(
-							"Filtering to keep only the top " + Player.GET_TOP_PATHS_COUNT + " paths per target city");
-					// filter out similar paths to keep only the non-dominated ones
-					for (Entry<Integer, List<NAMOAPath>> entry : possiblePathsMap.entrySet()) {
-						Integer targetCityId = entry.getKey();
-						// I take the first path as is
-						possiblePathsMap.put(targetCityId, getTopPaths(entry.getValue(), Player.GET_TOP_PATHS_COUNT));
-					}
-				}
-
+			NAMOAPathsForCity namoaPathsForCity = findNAMOAPathsForCity(city, gs);
+			if (namoaPathsForCity != null) {
 				// I store them for later use
-				namoaPathsForCityMap.put(city.id(), new NAMOAPathsForCity(city, possiblePathsMap));
+				namoaPathsForCityMap.put(city.id(), namoaPathsForCity);
 			}
 		}
 
