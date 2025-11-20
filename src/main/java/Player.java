@@ -1056,11 +1056,6 @@ interface AI {
 	// INTACT during the computation
 	// This is the default entry point for an AI
 	public default List<Action> computeIntact(GameState gs) {
-		// For new immutable GameState we can safely pass it directly.
-		if (gs == null) {
-			gs = GameState.createInitial(MatchConstants.width > 0 ? MatchConstants.width : 26,
-					MatchConstants.height > 0 ? MatchConstants.height : 17);
-		}
 		return compute(gs);
 	}
 
@@ -1095,13 +1090,17 @@ class StupidAI implements AI {
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
 
-		City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
-		if (!randomCity.desiredCityIds().isEmpty()) {
-			City randomDesired = gs.map().citiesById()
-					.get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
-			Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(),
-					randomDesired.y());
-			result.add(randomAutoPlace);
+		if (!gs.map().citiesById().isEmpty()) {
+			City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
+			if (randomCity != null && !randomCity.desiredCityIds().isEmpty()) {
+				City randomDesired = gs.map().citiesById()
+						.get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
+				if (randomDesired != null) {
+					Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(),
+							randomDesired.y());
+					result.add(randomAutoPlace);
+				}
+			}
 		}
 
 		Collection<Rail> rails = gs.rails().values();
