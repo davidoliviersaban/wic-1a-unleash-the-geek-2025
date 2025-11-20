@@ -2,6 +2,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -96,21 +97,10 @@ public class NAMOAStarTest {
         cities.put(0, new City(0, 0, 0, 0, List.of()));
         cities.put(1, new City(1, 2, 0, 0, List.of()));
 
-        // Create terrain with river at (1,0)
-        Tile[][] terrain = new Tile[MatchConstants.width][MatchConstants.height];
-        for (int x = 0; x < MatchConstants.width; x++) {
-            for (int y = 0; y < MatchConstants.height; y++) {
-                terrain[x][y] = new Tile(x, y, 0, TerrainType.PLAIN, -1, false, null, new ArrayList<>());
-            }
-        }
-        terrain[1][0] = new Tile(1, 0, 0, TerrainType.RIVER, -1, false, null, new ArrayList<>()); // Higher cost
+        TerrainType[][] terrain = createTerrainGrid(MatchConstants.width, MatchConstants.height, TerrainType.PLAIN);
+        terrain[1][0] = TerrainType.RIVER; // Higher cost tile
 
-        // Place cities
-        terrain[0][0] = new Tile(0, 0, 0, TerrainType.PLAIN, -1, false, cities.get(0), new ArrayList<>());
-        terrain[2][0] = new Tile(2, 0, 0, TerrainType.PLAIN, -1, false, cities.get(1), new ArrayList<>());
-
-        MapDefinition map = new MapDefinition(10, 10, terrain);
-        GameState gs = new GameState(1, map, Map.of(), 0, 0, null);
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -162,31 +152,17 @@ public class NAMOAStarTest {
 
     @Test
     public void testFindPaths_MultipleNonDominatedPaths() {
-        // Create scenario with two different paths: one shorter but expensive, one
-        // longer but cheaper
         Map<Integer, City> cities = new HashMap<>();
         cities.put(0, new City(0, 0, 0, 0, List.of()));
         cities.put(1, new City(1, 3, 2, 0, List.of()));
 
-        // Create terrain: direct path has rivers, alternative path is longer but plain
-        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
-        for (int x = 0; x < 10; x++) {
-            for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
-            }
-        }
+        TerrainType[][] terrain = createTerrainGrid(10, 10, TerrainType.PLAIN);
+        terrain[1][0] = TerrainType.RIVER;
+        terrain[2][0] = TerrainType.RIVER;
+        terrain[3][0] = TerrainType.RIVER;
+        terrain[3][1] = TerrainType.RIVER;
 
-        // Make direct horizontal path expensive (rivers)
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.RIVER, null);
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.RIVER, null);
-        terrain[3][0] = new TerrainCell(3, 0, TerrainType.RIVER, null);
-        terrain[3][1] = new TerrainCell(3, 1, TerrainType.RIVER, null);
-
-        // Place cities
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
-        terrain[3][2] = new TerrainCell(3, 2, TerrainType.PLAIN, cities.get(1));
-        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -218,23 +194,11 @@ public class NAMOAStarTest {
         cities.put(0, new City(0, 0, 0, 0, List.of()));
         cities.put(1, new City(1, 3, 0, 0, List.of()));
 
-        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
-        for (int x = 0; x < 10; x++) {
-            for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
-            }
-        }
+        TerrainType[][] terrain = createTerrainGrid(10, 10, TerrainType.PLAIN);
+        terrain[1][0] = TerrainType.POI;
+        terrain[2][0] = TerrainType.POI;
 
-        // Block the path with non-buildable terrain
-        terrain[0][0] = new TerrainCell(0, 0, TerrainType.PLAIN, cities.get(0));
-        terrain[3][0] = new TerrainCell(3, 0, TerrainType.PLAIN, cities.get(1));
-
-        // Put a POI at (1,0) and (2,0) to block (assuming POIs are not buildable)
-        terrain[1][0] = new TerrainCell(1, 0, TerrainType.POI, null);
-        terrain[2][0] = new TerrainCell(2, 0, TerrainType.POI, null);
-
-        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
 
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1));
@@ -331,23 +295,15 @@ public class NAMOAStarTest {
         cities.put(10, new City(10, 25, 10, 0, List.of()));
         cities.put(11, new City(11, 15, 2, 0, List.of()));
 
-        TerrainCell[][] terrain = new TerrainCell[30][20];
+        TerrainType[][] terrain = new TerrainType[30][20];
         for (int x = 0; x < 30; x++) {
             for (int y = 0; y < 20; y++) {
-                // Mix of terrain types
-                TerrainType type = (x + y) % 3 == 0 ? TerrainType.RIVER
+                terrain[x][y] = (x + y) % 3 == 0 ? TerrainType.RIVER
                         : (x * y) % 5 == 0 ? TerrainType.MOUNTAIN : TerrainType.PLAIN;
-                terrain[x][y] = new TerrainCell(x, y, type, null);
             }
         }
 
-        // Place cities
-        for (City city : cities.values()) {
-            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), TerrainType.PLAIN, city);
-        }
-
-        MapDefinition map = new MapDefinition(30, 20, terrain, cities, Map.of(), 0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
         City start = cities.get(0);
         List<City> targets = List.of(cities.get(1), cities.get(2), cities.get(3));
 
@@ -383,20 +339,9 @@ public class NAMOAStarTest {
         cities.put(1, new City(1, 15, 3, 0, List.of(2)));
         cities.put(2, new City(2, 18, 1, 0, List.of()));
 
-        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
-        for (int x = 0; x < MatchConstants.width; x++) {
-            for (int y = 0; y < MatchConstants.height; y++) {
-                terrain[x][y] = new TerrainCell(x, y, TerrainType.PLAIN, null);
-            }
-        }
+        TerrainType[][] terrain = createTerrainGrid(MatchConstants.width, MatchConstants.height, TerrainType.PLAIN);
 
-        // Place cities
-        terrain[15][3] = new TerrainCell(15, 3, TerrainType.PLAIN, cities.get(1));
-        terrain[18][1] = new TerrainCell(18, 1, TerrainType.PLAIN, cities.get(2));
-
-        MapDefinition map = new MapDefinition(MatchConstants.width, MatchConstants.height, terrain, cities, Map.of(),
-                0);
-        GameState gs = new GameState(1, map, Map.of(), new Region[0], 0, 0, null);
+        GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
 
         City start = cities.get(1);
         List<City> targets = List.of(cities.get(2));
@@ -452,33 +397,80 @@ public class NAMOAStarTest {
 
     public static GameState createGameStateWithCitiesAndTerrain(Map<Integer, City> cities,
             Map<Coord, Rail> rails, TerrainType defaultTerrain) {
-        TerrainCell[][] terrain = new TerrainCell[MatchConstants.width][MatchConstants.height];
-        for (int x = 0; x < 10; x++) {
-            for (int y = 0; y < 10; y++) {
-                terrain[x][y] = new TerrainCell(x, y, defaultTerrain, null);
+        return createGameStateWithCitiesAndTerrain(cities, rails,
+                createTerrainGrid(MatchConstants.width, MatchConstants.height, defaultTerrain));
+    }
+
+    private static TerrainType[][] createTerrainGrid(int width, int height, TerrainType defaultTerrain) {
+        TerrainType[][] terrain = new TerrainType[width][height];
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                terrain[x][y] = defaultTerrain;
+            }
+        }
+        return terrain;
+    }
+
+    public static GameState createGameStateWithCitiesAndTerrain(Map<Integer, City> cities,
+            Map<Coord, Rail> rails, TerrainType[][] terrain) {
+        int width = terrain.length;
+        int height = terrain[0].length;
+
+        TerrainType[][] terrainCopy = new TerrainType[width][height];
+        int[][] regionIds = new int[width][height];
+        int[][] cityIds = new int[width][height];
+
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                terrainCopy[x][y] = terrain[x][y];
+                regionIds[x][y] = 0;
+                cityIds[x][y] = -1;
             }
         }
 
-        // Place cities on terrain
-        for (City city : cities.values()) {
-            terrain[city.x()][city.y()] = new TerrainCell(city.x(), city.y(), defaultTerrain, city);
-        }
-
-        // Initialize connections map and city list for all city pairs
-        MatchConstants.connections.clear();
-        MatchConstants.cityList.clear();
         int maxCityId = cities.keySet().stream().max(Integer::compareTo).orElse(0);
-        MatchConstants.connectionLookup = new Connection[maxCityId + 1][maxCityId + 1];
-        for (City city1 : cities.values()) {
-            MatchConstants.cityList.add(city1);
-            for (City city2 : cities.values()) {
-                Connection connection = new Connection(city1.id(), city2.id());
-                MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection);
-                MatchConstants.connectionLookup[city1.id()][city2.id()] = connection;
+        int cityArraySize = Math.max(1, maxCityId + 1);
+        City[] citiesById = new City[cityArraySize];
+        for (City city : cities.values()) {
+            citiesById[city.id()] = city;
+            cityIds[city.x()][city.y()] = city.id();
+        }
+
+        List<Tile> regionCells = new ArrayList<>();
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                City city = cityIds[x][y] >= 0 ? citiesById[cityIds[x][y]] : null;
+                regionCells.add(new Tile(x, y, regionIds[x][y], terrainCopy[x][y], city));
             }
         }
 
-        MapDefinition map = new MapDefinition(10, 10, terrain, cities, Map.of(), 0);
-        return new GameState(1, map, rails, new Region[0], 0, 0, new java.util.HashSet<>());
+        Region[] regions = new Region[] { new Region(0, 0, regionCells, new HashSet<>(), !cities.isEmpty()) };
+
+        MatchConstants.cityCount = cities.size();
+        MatchConstants.regionsCount = regions.length;
+
+        initializeConnections(citiesById);
+
+        MapDefinition map = new MapDefinition(width, height, terrainCopy, regionIds, cityIds, citiesById, regions);
+        return new GameState(1, map, rails, 0, 0, new HashSet<>());
+    }
+
+    private static void initializeConnections(City[] citiesById) {
+        MatchConstants.connections.clear();
+        int size = Math.max(1, citiesById.length);
+        MatchConstants.connectionLookup = new Connection[size][size];
+        for (int i = 0; i < size; i++) {
+            if (i >= citiesById.length || citiesById[i] == null) {
+                continue;
+            }
+            for (int j = 0; j < size; j++) {
+                if (j >= citiesById.length || citiesById[j] == null) {
+                    continue;
+                }
+                Connection connection = new Connection(i, j);
+                MatchConstants.connectionLookup[i][j] = connection;
+                MatchConstants.connections.put(i + "-" + j, connection);
+            }
+        }
     }
 }
