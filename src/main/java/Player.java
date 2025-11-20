@@ -1,22 +1,20 @@
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Map.Entry;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.Objects;
 import java.util.Random;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-import java.util.HashSet;
-import java.util.Scanner;
 
 class Player {
 
 	// Easy to find switches
 	public static final boolean isDebugOn = true;
-	public static final boolean isCompareFailureOn = false;
 	public static int ME;
 	public static int OPP;
 
@@ -30,7 +28,6 @@ class Player {
 
 	// Game variables
 	private static GameState previousGameState;
-	private static GameState predictedGameState; // placeholder for future prediction feature
 	private static boolean stopGame = false;
 
 	public static void main(String args[]) {
@@ -263,22 +260,6 @@ class Player {
 		Time.debugDuration("Finished initround");
 
 		return result;
-
-	}
-
-	// Runs a comparison between what CG gives us, and what we had predicted. Will
-	// stop the game if any difference is found, in order to highlight the need of a
-	// new test
-	private static void compareInputAgainstPrediction(GameState gameStateFromInput) {
-		if (isCompareFailureOn && predictedGameState != null && !predictedGameState.equals(gameStateFromInput)) {
-			if (isDebugOn) {
-				Print.debug("Prediction mismatch detected. (No pretty print available)");
-				Print.debug("Stop the game");
-			}
-			stopGame = true;
-		} else if (isDebugOn) {
-			Print.debug("Prediction ok !");
-		}
 
 	}
 
@@ -719,52 +700,6 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 	}
 }
 
-class GameEngine {
-	static GameState applyActions(GameState state, List<Action> myActions, List<Action> oppActions) {
-		GameState result = state;
-		List<Coord> myCoords = buildCoords(myActions);
-		List<Coord> oppCoords = buildCoords(oppActions);
-		if (myCoords != null && oppCoords != null && !Collections.disjoint(myCoords, oppCoords)) {
-			List<Coord> contested = new ArrayList<>(myCoords);
-			contested.retainAll(oppCoords);
-			result = result.withRails(contested, RailOwner.CONTESTED);
-			myCoords.removeAll(contested);
-			oppCoords.removeAll(contested);
-			if (myCoords.isEmpty() == false)
-				result = result.withRails(myCoords, RailOwner.ME);
-			if (oppCoords.isEmpty() == false)
-				result = result.withRails(oppCoords, RailOwner.OPPONENT);
-		} else {
-			if (myCoords != null)
-				result = result.withRails(myCoords, RailOwner.ME);
-			if (oppCoords != null)
-				result = result.withRails(oppCoords, RailOwner.OPPONENT);
-		}
-		return result.nextRound();
-	}
-
-	private static List<Coord> buildCoords(List<Action> actions) {
-		if (actions == null)
-			return null;
-		return actions.stream().filter(a -> a.type() == ActionType.PLACE_TRACKS).map(Action::coord1).toList();
-	}
-}
-
-interface GameStateObject {
-
-	public default void print() {
-		Print.debugForInput(toString());
-	}
-
-}
-
-enum GameResult {
-	UNKNOWN, // Game not yet finished
-	WON, // Game finished and won by us :)
-	LOST, // Game finished and lost :(
-	TIE // Game finished and tied
-}
-
 // Pathfinding using BFS for shortest rail paths
 
 record CityConnection(City from, City to, List<Coord> path, int distance) {
@@ -1016,41 +951,6 @@ record NAMOAPath(City from, City to, List<Coord> path, PathCost cost) {
 
 	int buildCost() {
 		return cost.buildCost();
-	}
-}
-
-// GameState moved to dedicated file GameState.java
-
-// GameEngine moved to its own file
-
-class CityPair {
-	City origin;
-	City destination;
-
-	public CityPair(City origin, City destination) {
-		super();
-		this.origin = origin;
-		this.destination = destination;
-	}
-
-	@Override
-	public int hashCode() {
-		final int prime = 31;
-		int result = 1;
-		result = prime * result + Objects.hash(destination, origin);
-		return result;
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		CityPair other = (CityPair) obj;
-		return Objects.equals(destination, other.destination) && Objects.equals(origin, other.origin);
 	}
 }
 
