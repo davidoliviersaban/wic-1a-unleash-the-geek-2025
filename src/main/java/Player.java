@@ -194,7 +194,7 @@ class Player {
 		// Parse grid state
 		Map<Coord, Rail> rails = new HashMap<>(MatchConstants.width * MatchConstants.height);
 		Region[] regions = result.regions().clone();
-		Set<Connection> connectionsSet = new TreeSet<>();
+		Set<Connection> resetCachedConnectionsSet = new TreeSet<>();
 		Map<Coord, Integer> coordToRegionId = result.map().coordToRegionId();
 
 		@SuppressWarnings("unchecked")
@@ -210,34 +210,35 @@ class Player {
 				in.nextInt(); // Skip inked flag (not used)
 				String partOfActiveConnectionStr = in.next();
 				Coord coord = MatchConstants.coord(x, y);
-				Integer regionId = coordToRegionId.get(coord);
 
-				if (regionId != null && regionId < regionInstability.length) {
-					regionInstability[regionId] = instability;
-				}
+				// Recall instability
+				Integer regionId = coordToRegionId.get(coord);
+				regionInstability[regionId] = instability;
 
 				if (tracksOwner >= 0) {
-					RailOwner owner = tracksOwner == ME ? RailOwner.ME
-							: tracksOwner == OPP ? RailOwner.OPPONENT
-									: tracksOwner == -1 ? RailOwner.NONE
-											: RailOwner.CONTESTED;
+					RailOwner owner = RailOwner.NONE;
+					if (tracksOwner == ME) {
+						owner = RailOwner.ME;
+					} else if (tracksOwner == OPP) {
+						owner = RailOwner.OPPONENT;
+					} else {
+						owner = RailOwner.CONTESTED;
+					}
 
-					if (owner != RailOwner.NONE) {
-						Rail rail = new Rail(x, y, owner);
-						rail.partOfActiveConnections = new ArrayList<>();
+					Rail rail = new Rail(x, y, owner);
+					rail.partOfActiveConnections = new ArrayList<>();
 
-						if (partOfActiveConnectionStr.charAt(0) != 'x') {
-							String[] connections = partOfActiveConnectionStr.split(",");
-							for (String conn : connections) {
-								Connection connection = MatchConstants.connections.get(conn);
-								rail.partOfActiveConnections.add(connection);
-								connectionsSet.add(connection);
+					if (partOfActiveConnectionStr.charAt(0) != 'x') {
+						String[] connections = partOfActiveConnectionStr.split(",");
+						for (String conn : connections) {
+							Connection connection = MatchConstants.connections.get(conn);
+							rail.partOfActiveConnections.add(connection);
+							resetCachedConnectionsSet.add(connection);
 
-								if (regionConnections[regionId] == null) {
-									regionConnections[regionId] = new HashSet<>();
-								}
-								regionConnections[regionId].add(connection);
+							if (regionConnections[regionId] == null) {
+								regionConnections[regionId] = new HashSet<>();
 							}
+							regionConnections[regionId].add(connection);
 						}
 						rails.put(coord, rail);
 					}
@@ -257,7 +258,8 @@ class Player {
 		Time.debugDuration("Finished reading input");
 
 		// Create updated game state
-		result = new GameState(result.round(), result.map(), rails, regions, myScore, foeScore, connectionsSet);
+		result = new GameState(result.round(), result.map(), rails, regions, myScore, foeScore,
+				resetCachedConnectionsSet);
 		Time.debugDuration("Finished initround");
 
 		return result;
