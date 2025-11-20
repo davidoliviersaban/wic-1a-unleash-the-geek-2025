@@ -93,11 +93,11 @@ class Player {
 				int type = in.nextInt(); // 0 (PLAINS), 1 (RIVER), 2 (MOUNTAIN), 3 (POI)
 
 				TerrainType terrainType = switch (type) {
-					case 0 -> TerrainType.PLAIN;
-					case 1 -> TerrainType.RIVER;
-					case 2 -> TerrainType.MOUNTAIN;
-					case 3 -> TerrainType.POI;
-					default -> TerrainType.PLAIN; // POI treated as plain for now
+				case 0 -> TerrainType.PLAIN;
+				case 1 -> TerrainType.RIVER;
+				case 2 -> TerrainType.MOUNTAIN;
+				case 3 -> TerrainType.POI;
+				default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
 				terrain[x][y] = new TerrainCell(x, y, terrainType, null);
@@ -463,9 +463,9 @@ record TerrainCell(int x, int y, TerrainType type, City city) {
 
 	int buildCost() {
 		return switch (type) {
-			case PLAIN -> 1;
-			case RIVER -> 2;
-			case MOUNTAIN, POI -> 3;
+		case PLAIN -> 1;
+		case RIVER -> 2;
+		case MOUNTAIN, POI -> 3;
 		};
 	}
 
@@ -556,38 +556,38 @@ record MapDefinition(int width, int height, TerrainCell[][] terrain, Map<Integer
 	}
 }
 
-record Action(ActionType type, Coord coord1, Coord coord2) {
+record Action(ActionType type, Coord coord1, Coord coord2, int id) {
 	static Action buildRail(int x, int y) {
-		return new Action(ActionType.PLACE_TRACKS, MatchConstants.coord(x, y), null);
+		return new Action(ActionType.PLACE_TRACKS, MatchConstants.coord(x, y), null, -1);
 	}
 
 	static Action autoPlace(int x1, int y1, int x2, int y2) {
-		return new Action(ActionType.AUTOPLACE, MatchConstants.coord(x1, y1), MatchConstants.coord(x2, y2));
+		return new Action(ActionType.AUTOPLACE, MatchConstants.coord(x1, y1), MatchConstants.coord(x2, y2), -1);
 	}
 
-	static Action disrupt(int x, int y) {
-		return new Action(ActionType.DISRUPT, MatchConstants.coord(x, y), null);
+	static Action disruptRegion(int id) {
+		return new Action(ActionType.DISRUPT, null, null, id);
 	}
 
 	static Action waitAction() {
-		return new Action(ActionType.WAIT, null, null);
+		return new Action(ActionType.WAIT, null, null, -1);
 	}
 
 	@Override
 	public String toString() {
 		return switch (type) {
-			case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
-			case AUTOPLACE ->
-				ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
-			case DISRUPT -> ActionType.DISRUPT + " " + coord1.x() + " " + coord1.y();
-			case MESSAGE -> ActionType.MESSAGE + " insert a message here";
-			case WAIT -> "WAIT";
+		case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
+		case AUTOPLACE ->
+			ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
+		case DISRUPT -> ActionType.DISRUPT + " " + id;
+		case MESSAGE -> ActionType.MESSAGE + " insert a message here";
+		case WAIT -> "WAIT";
 		};
 	}
 }
 
-record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] regions, int myScore,
-		int opponentScore, Set<Connection> cachedConnections) {
+record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] regions, int myScore, int opponentScore,
+		Set<Connection> cachedConnections) {
 	GameState nextRound() {
 		return new GameState(round + 1, map, rails, regions, myScore, opponentScore, cachedConnections);
 	}
@@ -845,9 +845,8 @@ record NAMOANode(Coord coord, PathCost cost, PathCost heuristic, NAMOANode paren
 class NAMOAStar {
 
 	/**
-	 * Finds non-dominated paths from a start city to multiple target cities using
-	 * * NAMOA*.
-	 * Returns a map from target city ID to a list of non-dominated paths.
+	 * Finds non-dominated paths from a start city to multiple target cities using *
+	 * NAMOA*. Returns a map from target city ID to a list of non-dominated paths.
 	 * Optimized version with early termination and visited tracking.
 	 */
 	static Map<Integer, List<NAMOAPath>> findPaths(GameState gs, City start, List<City> targets) {
@@ -1125,76 +1124,35 @@ interface AI {
 	public default Action getDisruptAction(GameState gs) {
 		Action result = null;
 
-		Map<CityPair, Integer> cityPairs = new HashMap<CityPair, Integer>();
-
-		// Builds the map of city pairs
-		for (City origin : gs.map().citiesById().values()) {
-			for (Integer destinationId : origin.desiredCityIds()) {
-				City destination = gs.map().citiesById().get(destinationId);
-				cityPairs.put(new CityPair(origin, destination), null);
-			}
-
-		}
+		double[] regionValues = new double[gs.regions().length];
 
 		// add rails being part of active connections to the city pairs,
 		Collection<Rail> rails = gs.rails().values();
 		for (Rail rail : rails) {
-			for (Connection connection : rail.partOfActiveConnections) {
-				City origin = gs.map().citiesById().get(connection.fromId());
-				City destination = gs.map().citiesById().get(connection.toId());
-				CityPair cityPair = new CityPair(origin, destination);
-
-				if (cityPairs.get(cityPair) == null) {
-					cityPairs.put(cityPair, 0);
-				}
-				if (rail.owner == RailOwner.ME) {
-					cityPairs.put(cityPair, cityPairs.get(cityPair) + 1);
-				} else if (rail.owner == RailOwner.OPPONENT) {
-					cityPairs.put(cityPair, cityPairs.get(cityPair) - 1);
-				}
-
+			int regionId = gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y));
+			if (rail.owner == RailOwner.ME) {
+				regionValues[regionId] += rail.partOfActiveConnections.size();
+			} else if (rail.owner == RailOwner.OPPONENT) {
+				regionValues[regionId] -= rail.partOfActiveConnections.size();
 			}
 		}
 
-		CityPair worstCityPair = null;
-		int worstConnection = 100000;
-		for (CityPair cityPair : cityPairs.keySet()) {
-			Print.debug("City pair from " + cityPair.origin.id() + " to " + cityPair.destination.id() + " is worth: "
-					+ cityPairs.get(cityPair));
-			if (cityPairs.get(cityPair) != null && cityPairs.get(cityPair) < worstConnection) {
-				worstConnection = cityPairs.get(cityPair);
-				worstCityPair = cityPair;
+		double worstRegion = 0;
+		int worstRegionId = -1;
+
+		for (int i = 0; i < regionValues.length; i++) {
+			regionValues[i] = regionValues[i] / (3 - gs.regions()[i].instability());
+			Print.debug("Region " + Print.formatIntFixedLenght(2, worstRegionId) + " is worth "
+					+ Print.formatDoubleFixedLenghtAFterComma(10, 2, regionValues[i]));
+			if (regionValues[i] < worstRegion) {
+				worstRegionId = i;
 			}
 		}
 
-		if (worstCityPair != null && worstConnection < 0) {
-			// Ink the first rail being part of the path and not belonging to a region with
-			// a city
-			for (Rail rail : rails) {
-
-				if (rail.owner == RailOwner.OPPONENT) {
-
-					for (Connection connection : rail.partOfActiveConnections) {
-						City origin = gs.map().citiesById().get(connection.fromId());
-						City destination = gs.map().citiesById().get(connection.toId());
-						CityPair cityPair = new CityPair(origin, destination);
-
-						if (cityPair.equals(worstCityPair)) {
-
-							int regionId = gs.map().coordToRegionId().get(MatchConstants.coord(rail.x, rail.y));
-							Region region = gs.regions()[regionId];
-							if (!region.containsACity()) {
-								result = Action.disrupt(rail.x, rail.y);
-							}
-						}
-
-					}
-
-				}
-
-			}
-
+		if (worstRegionId != -1) {
+			result = Action.disruptRegion(worstRegionId);
 		}
+
 		return result;
 	}
 }
@@ -1281,8 +1239,7 @@ class SimpleAI implements AI {
 				// I target only cities I don't have a connection to yet
 				List<City> targetCities = city.desiredCityIds().stream()
 						.filter(id -> !gs.cachedConnections().contains(new Connection(city.id(), id)))
-						.map(id -> gs.map().citiesById().get(id))
-						.toList();
+						.map(id -> gs.map().citiesById().get(id)).toList();
 
 				// I compute possible paths to those target cities
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
