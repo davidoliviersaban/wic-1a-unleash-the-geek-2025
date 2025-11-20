@@ -160,13 +160,16 @@ class Player {
 
 		// Populate connections map for all city pairs
 		for (City city1 : citiesById.values()) {
+			MatchConstants.connectionLookup = new Connection[townCount][townCount];
+
 			for (City city2 : citiesById.values()) {
-				MatchConstants.connections.put(city1.id() + "-" + city2.id(), new Connection(city1.id(), city2.id()));
+				Connection connection = new Connection(city1.id(), city2.id());
+				MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection); // Self-connection
+				MatchConstants.connectionLookup[city1.id()][city2.id()] = connection;
 			}
 		}
-
 		// Create initial game state
-		previousGameState = new GameState(1, mapDef, new HashMap<>(), regions, 0, 0, null);
+		previousGameState = new GameState(0, mapDef, new HashMap<>(), regions, 0, 0, null);
 
 		Time.startRoundTimer();
 		MatchConstants.print();
@@ -174,37 +177,26 @@ class Player {
 
 	static GameState initRound(Scanner in) {
 
-		GameState result = null;
-
-		if (previousGameState == null) {
-			// Initial blank map definition via GameState factory
-			result = GameState.createInitial(MatchConstants.width, MatchConstants.height);
-		} else {
-			result = previousGameState.nextRound();
-		}
-
 		// Read scores
 		int myScore = in.nextInt();
 		Time.startRoundTimer();
+
+		GameState result = previousGameState.nextRound();
 		Time.debugDuration("Starting initRound");
+
 		int foeScore = in.nextInt();
 
 		// Update game state from previous round
-		result = previousGameState.withScores(myScore, foeScore);
+		result = result.withScores(myScore, foeScore);
 
 		// Parse grid state
-		Map<Coord, Rail> rails = new HashMap<>();
+		Map<Coord, Rail> rails = new HashMap<>(MatchConstants.width * MatchConstants.height);
 		Region[] regions = result.regions().clone();
 		Set<Connection> connectionsSet = new TreeSet<>();
 		Map<Coord, Integer> coordToRegionId = result.map().coordToRegionId();
 
-		// Reset connections for all regions
-		Map<Integer, Set<Connection>> regionConnectionsMap = new HashMap<>();
-		for (int i = 0; i < regions.length; i++) {
-			regionConnectionsMap.put(i, new HashSet<>());
-		}
-
-		// Track region instability separately to avoid creating Region objects in loop
+		@SuppressWarnings("unchecked")
+		Set<Connection>[] regionConnections = new Set[regions.length];
 		int[] regionInstability = new int[regions.length];
 
 		Time.debugDuration("Starting reading input");
@@ -212,30 +204,21 @@ class Player {
 		for (int y = 0; y < MatchConstants.height; y++) {
 			for (int x = 0; x < MatchConstants.width; x++) {
 				int tracksOwner = in.nextInt();
-				int instability = in.nextInt(); // region inked (destroyed) when this >= 3
-				boolean inked = in.nextInt() != 0; // true if region is destroyed
-				String partOfActiveConnectionStr = in.next(); // x or town connections like 0-1,1-2
-
+				int instability = in.nextInt();
+				in.nextInt(); // Skip inked flag (not used)
+				String partOfActiveConnectionStr = in.next();
 				Coord coord = MatchConstants.coord(x, y);
 				Integer regionId = coordToRegionId.get(coord);
 
-				// Store instability for later
 				if (regionId != null && regionId < regionInstability.length) {
 					regionInstability[regionId] = instability;
 				}
 
-				// Update rails
 				if (tracksOwner >= 0) {
-					RailOwner owner;
-					if (tracksOwner == ME) {
-						owner = RailOwner.ME;
-					} else if (tracksOwner == OPP) {
-						owner = RailOwner.OPPONENT;
-					} else if (tracksOwner == -1) {
-						owner = RailOwner.NONE;
-					} else {
-						owner = RailOwner.CONTESTED;
-					}
+					RailOwner owner = tracksOwner == ME ? RailOwner.ME
+							: tracksOwner == OPP ? RailOwner.OPPONENT
+									: tracksOwner == -1 ? RailOwner.NONE
+											: RailOwner.CONTESTED;
 
 					if (owner != RailOwner.NONE) {
 						Rail rail = new Rail(x, y, owner);
@@ -245,14 +228,15 @@ class Player {
 							String[] connections = partOfActiveConnectionStr.split(",");
 							for (String conn : connections) {
 								Connection connection = MatchConstants.connections.get(conn);
-								if (connection != null) {
-									rail.partOfActiveConnections.add(connection);
-									connectionsSet.add(connection);
+								MatchConstants.connectionLookup[connection.fromId()][connection.toId()] = connection;
+								rail.partOfActiveConnections.add(connection);
+								connectionsSet.add(connection);
 
-									// Add connection to region
-									if (regionId != null && regionConnectionsMap.containsKey(regionId)) {
-										regionConnectionsMap.get(regionId).add(connection);
+								if (regionId != null && regionId >= 0 && regionId < regionConnections.length) {
+									if (regionConnections[regionId] == null) {
+										regionConnections[regionId] = new HashSet<>();
 									}
+									regionConnections[regionId].add(connection);
 								}
 							}
 						}
@@ -265,8 +249,8 @@ class Player {
 		// Update regions once after reading all input
 		for (int i = 0; i < regions.length; i++) {
 			List<TerrainCell> existingCells = regions[i].cells();
-			Set<Connection> regionConnections = regionConnectionsMap.getOrDefault(i, new HashSet<>());
-			regions[i] = new Region(i, regionInstability[i], existingCells, regionConnections);
+			Set<Connection> connections = regionConnections[i] != null ? regionConnections[i] : new HashSet<>();
+			regions[i] = new Region(i, regionInstability[i], existingCells, connections);
 		}
 
 		Time.debugDuration("Finished reading input");
@@ -332,6 +316,7 @@ class Player {
 class MatchConstants {
 
 	public static Map<String, Connection> connections = new HashMap<>();
+	public static Connection[][] connectionLookup;
 	public static int cityCount;
 	public static int regionsCount;
 	public static final int INSTABILITY_THRESHOLD = 4;
@@ -619,8 +604,10 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Co
 
 record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, Region[] regions, int myScore, int opponentScore,
 		Set<Connection> cachedConnections) {
+
 	GameState nextRound() {
-		return new GameState(round + 1, map, rails, regions, myScore, opponentScore, cachedConnections);
+		Print.debug("Advancing to round " + (round() + 1));
+		return new GameState(round() + 1, map(), rails(), regions(), myScore(), opponentScore(), cachedConnections());
 	}
 
 	GameState withRails(List<Coord> coords, RailOwner owner) {

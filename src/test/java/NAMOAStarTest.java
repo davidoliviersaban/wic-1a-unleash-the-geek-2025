@@ -466,10 +466,14 @@ public class NAMOAStarTest {
         // Initialize connections map and city list for all city pairs
         MatchConstants.connections.clear();
         MatchConstants.cityList.clear();
+        int maxCityId = cities.keySet().stream().max(Integer::compareTo).orElse(0);
+        MatchConstants.connectionLookup = new Connection[maxCityId + 1][maxCityId + 1];
         for (City city1 : cities.values()) {
             MatchConstants.cityList.add(city1);
             for (City city2 : cities.values()) {
-                MatchConstants.connections.put(city1.id() + "-" + city2.id(), new Connection(city1.id(), city2.id()));
+                Connection connection = new Connection(city1.id(), city2.id());
+                MatchConstants.connections.put(city1.id() + "-" + city2.id(), connection);
+                MatchConstants.connectionLookup[city1.id()][city2.id()] = connection;
             }
         }
 
