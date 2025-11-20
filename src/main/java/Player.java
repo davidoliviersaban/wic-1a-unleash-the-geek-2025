@@ -12,7 +12,6 @@ import java.util.LinkedList;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Scanner;
 import java.util.stream.Collectors;
 
@@ -93,11 +92,11 @@ class Player {
 				int type = in.nextInt(); // 0 (PLAINS), 1 (RIVER), 2 (MOUNTAIN), 3 (POI)
 
 				TerrainType terrainType = switch (type) {
-				case 0 -> TerrainType.PLAIN;
-				case 1 -> TerrainType.RIVER;
-				case 2 -> TerrainType.MOUNTAIN;
-				case 3 -> TerrainType.POI;
-				default -> TerrainType.PLAIN; // POI treated as plain for now
+					case 0 -> TerrainType.PLAIN;
+					case 1 -> TerrainType.RIVER;
+					case 2 -> TerrainType.MOUNTAIN;
+					case 3 -> TerrainType.POI;
+					default -> TerrainType.PLAIN; // POI treated as plain for now
 				};
 
 				terrain[x][y] = new TerrainCell(x, y, terrainType, null);
@@ -311,6 +310,8 @@ class MatchConstants {
 	public static int cityCount;
 	public static int regionsCount;
 	public static final int INSTABILITY_THRESHOLD = 3;
+	public static final int MAX_ACTIONS_PER_TURN = 3;
+	public static final Long MAX_TURN_DURATION_MS = 50L;
 	public static int height;
 	public static int width;
 	private static Coord[][] coords;
@@ -464,9 +465,9 @@ record TerrainCell(int x, int y, TerrainType type, City city) {
 
 	int buildCost() {
 		return switch (type) {
-		case PLAIN -> 1;
-		case RIVER -> 2;
-		case MOUNTAIN, POI -> 3;
+			case PLAIN -> 1;
+			case RIVER -> 2;
+			case MOUNTAIN, POI -> 3;
 		};
 	}
 
@@ -577,12 +578,12 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) {
 	@Override
 	public String toString() {
 		return switch (type) {
-		case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
-		case AUTOPLACE ->
-			ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
-		case DISRUPT -> ActionType.DISRUPT + " " + id;
-		case MESSAGE -> ActionType.MESSAGE + " insert a message here";
-		case WAIT -> "WAIT";
+			case PLACE_TRACKS -> ActionType.PLACE_TRACKS + " " + coord1.x() + " " + coord1.y();
+			case AUTOPLACE ->
+				ActionType.AUTOPLACE + " " + coord1.x() + " " + coord1.y() + " " + coord2.x() + " " + coord2.y();
+			case DISRUPT -> ActionType.DISRUPT + " " + id;
+			case MESSAGE -> ActionType.MESSAGE + " insert a message here";
+			case WAIT -> "WAIT";
 		};
 	}
 }
@@ -1214,8 +1215,9 @@ class SimpleAI implements AI {
 
 	Random r = new Random();
 
-	public NAMOAPath findCheapestPath(GameState gs, Map<Integer, NAMOAPathsForCity> possiblePathsMapFromCityMap) {
-		NAMOAPath cheapestPath = null;
+	public List<NAMOAPath> findSortedCheapestPaths(GameState gs,
+			Map<Integer, NAMOAPathsForCity> possiblePathsMapFromCityMap) {
+		List<NAMOAPath> allPaths = new ArrayList<>();
 		for (City city : gs.map().citiesById().values()) {
 			NAMOAPathsForCity namoaPathsForCity = possiblePathsMapFromCityMap.get(city.id());
 			if (namoaPathsForCity == null) {
@@ -1224,16 +1226,41 @@ class SimpleAI implements AI {
 			Map<Integer, List<NAMOAPath>> possiblePathsMap = namoaPathsForCity.pathsToTargets();
 			if (!city.desiredCityIds().isEmpty()) {
 				for (Entry<Integer, List<NAMOAPath>> target : possiblePathsMap.entrySet()) {
-					List<NAMOAPath> path = possiblePathsMap.get(target.getKey());
-					for (NAMOAPath p : path) {
-						if (cheapestPath == null || p.buildCost() < cheapestPath.buildCost()) {
-							cheapestPath = p;
-						}
-					}
+					List<NAMOAPath> paths = possiblePathsMap.get(target.getKey());
+					allPaths.addAll(paths);
 				}
 			}
 		}
-		return cheapestPath;
+
+		List<NAMOAPath> sortedPaths = sortCheapestPaths(allPaths);
+		return sortedPaths;
+	}
+
+	public List<NAMOAPath> sortCheapestPaths(List<NAMOAPath> paths) {
+		paths.sort((p1, p2) -> Integer.compare(p1.buildCost(), p2.buildCost()));
+		return paths;
+	}
+
+	/**
+	 * Builds rails along a path where rails don't already exist.
+	 * Returns a list of PLACE_TRACKS actions for cells that need rails.
+	 */
+	public List<Action> buildRailsAlongPath(GameState gs, NAMOAPath path) {
+		List<Action> railActions = new ArrayList<>();
+
+		for (Coord coord : path.path()) {
+			// Skip cities (start and end points)
+			if (gs.map().hasCity(coord.x(), coord.y())) {
+				continue;
+			}
+
+			// Only place rail if there isn't one already
+			if (!gs.rails().containsKey(coord)) {
+				railActions.add(Action.buildRail(coord.x(), coord.y()));
+			}
+		}
+
+		return railActions;
 	}
 
 	@Override
@@ -1249,23 +1276,33 @@ class SimpleAI implements AI {
 						.filter(id -> !gs.cachedConnections().contains(new Connection(city.id(), id)))
 						.map(id -> gs.map().citiesById().get(id)).toList();
 
-				// I compute possible paths to those target cities
 				Long duration = Time.getRoundDuration();
-				Print.debug(
-						duration + "ms: Computing NAMOA* paths from city " + city.id() + " to " + targetCities.stream()
-								.map(c -> Integer.toString(c.id())).collect(java.util.stream.Collectors.joining(", ")));
+				if (targetCities.isEmpty() || duration > MatchConstants.MAX_TURN_DURATION_MS) {
+					Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id());
+					continue;
+				}
+				// I compute possible paths to those target cities
+				Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
+						+ targetCities.stream().map(c -> Integer.toString(c.id()))
+								.collect(java.util.stream.Collectors.joining(", ")));
 				Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
 				// I store them for later use
 				namoaPathsForCityMap.put(city.id(), new NAMOAPathsForCity(city, possiblePathsMap));
 			}
 		}
-		NAMOAPath cheapestPath = findCheapestPath(gs, namoaPathsForCityMap);
-		if (cheapestPath != null) {
-			Coord start = MatchConstants.coord(cheapestPath.from().x(), cheapestPath.from().y());
-			Coord end = MatchConstants.coord(cheapestPath.to().x(), cheapestPath.to().y());
-			Action autoPlaceAction = Action.autoPlace(start.x(), start.y(), end.x(), end.y());
-			result.add(autoPlaceAction);
+		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
+		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
+			for (NAMOAPath path : cheapestPaths) {
+				if (result.size() >= MatchConstants.MAX_ACTIONS_PER_TURN) {
+					break;
+				}
+				Print.debug("Cheapest path from city " + path.from().id() + " to city " + path.to().id()
+						+ " with build cost " + path.buildCost() + " and distance " + path.distance());
+				// Build rails along the path instead of using AUTOPLACE
+				List<Action> railActions = buildRailsAlongPath(gs, path);
+				result.addAll(railActions);
+			}
 		}
 
 		Action disruptAction = getDisruptAction(gs);
