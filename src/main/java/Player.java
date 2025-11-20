@@ -1068,8 +1068,7 @@ interface AI {
 			Print.debug("Connection from " + conn.fromId() + " to " + conn.toId() + " has worth: "
 					+ connectionWorthMap.getOrDefault(conn, 0));
 		}
-
-		Time.debugDuration("Disrupt action computation end");
+		
 		double worstRegionValue = 0;
 		for (Region region : gs.regions()) {
 			if (region.isInstable() || region.containsACity()) {
@@ -1089,6 +1088,7 @@ interface AI {
 			}
 			Print.debug("Region " + region.id() + " has disruption value: " + regionValue);
 		}
+		Time.debugDuration("Disrupt action computation end");
 		return result;
 	}
 }
