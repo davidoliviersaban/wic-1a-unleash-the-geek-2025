@@ -1092,6 +1092,49 @@ interface AI {
 			}
 			Print.debug("Region " + region.id() + " has disruption value: " + regionValue);
 		}
+		
+		if (result == null) {
+			Print.debug("No regular disrupt found, going to kill max balance of rails");
+
+			Region regionToKill = null;
+			double bestBalance = 0;
+			for (Region region : gs.regions()) {
+
+				if (!region.connections().isEmpty() || region.isInstable() || region.containsACity()) {
+					continue;
+				}
+
+				double balance = 0;
+				for (Rail rail : gs.rails().values()) {
+					if (region.id() == gs.map().coordToRegionId().get(new Coord(rail.x, rail.y))) {
+						if (rail.owner == RailOwner.OPPONENT) {
+							balance--;
+						} else if (rail.owner == RailOwner.ME) {
+							balance++;
+						}
+					}
+
+				}
+
+				//Print.debug("Region " + region.id() + " has a raw rail balance of: " + balance);
+
+				balance = balance / (MatchConstants.INSTABILITY_THRESHOLD - region.instability());
+				//Print.debug("Region " + region.id() + " has a modulated rail balance of: " + balance);
+
+				if (balance < bestBalance) {
+					bestBalance = balance;
+					regionToKill = region;
+				}
+
+			}
+
+			if (regionToKill != null) {
+				Print.debug("Going to kill " + bestBalance + " balanced rails from region " + regionToKill.id());
+				result = Action.disruptRegion(regionToKill.id());
+			}
+
+		}
+		
 		Time.debugDuration("Disrupt action computation end");
 		return result;
 	}
