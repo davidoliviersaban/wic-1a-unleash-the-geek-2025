@@ -1044,9 +1044,11 @@ class StupidAI implements AI {
 		List<Action> result = new ArrayList<Action>();
 
 		City randomCity = gs.map().citiesById().get(r.nextInt(gs.map().citiesById().size()));
-		City randomDesired = gs.map().citiesById().get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));
-		Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(), randomDesired.y());
-		result.add(randomAutoPlace);
+		if(!randomCity.desiredCityIds().isEmpty()) {
+		City randomDesired = gs.map().citiesById().get(randomCity.desiredCityIds().get(r.nextInt(randomCity.desiredCityIds().size())));		
+			Action randomAutoPlace = Action.autoPlace(randomCity.x(), randomCity.y(), randomDesired.x(), randomDesired.y());
+			result.add(randomAutoPlace);
+		}
 
 		Collection<Rail> rails = gs.rails().values();
 		for (Rail rail : rails) {
@@ -1056,6 +1058,10 @@ class StupidAI implements AI {
 					break;
 				}
 			}
+		}
+		
+		if(result.isEmpty()) {
+			result.add(Action.waitAction());
 		}
 		
 		return result;
