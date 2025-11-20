@@ -139,11 +139,25 @@ class Player {
 		// Create initial MapDefinition
 		MapDefinition mapDef = new MapDefinition(width, height, terrain, citiesById, coordToRegionId, regionIds.size());
 
-		// Initialize regions array
+		// Initialize regions array and populate with terrain cells
 		Region[] regions = new Region[regionIds.size()];
+		Map<Integer, List<TerrainCell>> regionCellsMap = new HashMap<>();
+
+		// Collect cells for each region
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				Integer regionId = coordToRegionId.get(MatchConstants.coord(x, y));
+				if (regionId != null) {
+					regionCellsMap.computeIfAbsent(regionId, k -> new ArrayList<>()).add(terrain[x][y]);
+				}
+			}
+		}
+
+		// Create regions with their cells
 		for (int id : regionIds) {
 			if (id >= 0 && id < regions.length) {
-				regions[id] = new Region(id, 0);
+				List<TerrainCell> cells = regionCellsMap.getOrDefault(id, new ArrayList<>());
+				regions[id] = new Region(id, 0, cells, new HashSet<>());
 			}
 		}
 
@@ -178,6 +192,12 @@ class Player {
 		Region[] regions = result.regions().clone();
 		Set<Connection> connectionsSet = new TreeSet<>();
 
+		// Reset connections for all regions
+		Map<Integer, Set<Connection>> regionConnectionsMap = new HashMap<>();
+		for (int i = 0; i < regions.length; i++) {
+			regionConnectionsMap.put(i, new HashSet<>());
+		}
+
 		for (int y = 0; y < MatchConstants.height; y++) {
 			for (int x = 0; x < MatchConstants.width; x++) {
 				int tracksOwner = in.nextInt();
@@ -209,6 +229,12 @@ class Player {
 										Integer.parseInt(ids[1]));
 								rail.partOfActiveConnections.add(connection);
 								connectionsSet.add(connection);
+
+								// Add connection to region
+								Integer regionId = result.map().coordToRegionId().get(MatchConstants.coord(x, y));
+								if (regionId != null && regionConnectionsMap.containsKey(regionId)) {
+									regionConnectionsMap.get(regionId).add(connection);
+								}
 							}
 						}
 						rails.put(MatchConstants.coord(x, y), rail);
@@ -218,7 +244,11 @@ class Player {
 				// Update region instability
 				Integer regionId = result.map().coordToRegionId().get(MatchConstants.coord(x, y));
 				if (regionId != null && regionId >= 0 && regionId < regions.length) {
-					regions[regionId] = new Region(regionId, instability);
+					// Preserve the cells list from the previous region
+					List<TerrainCell> existingCells = regions[regionId] != null ? regions[regionId].cells()
+							: new ArrayList<>();
+					Set<Connection> regionConnections = regionConnectionsMap.getOrDefault(regionId, new HashSet<>());
+					regions[regionId] = new Region(regionId, instability, existingCells, regionConnections);
 				}
 			}
 		}
@@ -486,13 +516,13 @@ record City(int id, int x, int y, int regionId, List<Integer> desiredCityIds) {
 	}
 }
 
-record Region(int id, int instability) {
+record Region(int id, int instability, List<TerrainCell> cells, Set<Connection> connections) {
 	boolean isInstable() {
 		return instability >= MatchConstants.INSTABILITY_THRESHOLD;
 	}
 
 	Region increaseInstability() {
-		return new Region(id, instability + 1);
+		return new Region(id, instability + 1, cells, connections);
 	}
 
 	boolean containsACity() {
@@ -1247,6 +1277,7 @@ class SimpleAI implements AI {
 	 */
 	public List<Action> buildRailsAlongPath(GameState gs, NAMOAPath path) {
 		List<Action> railActions = new ArrayList<>();
+		int remainingBuildCapacity = MatchConstants.MAX_ACTIONS_PER_TURN;
 
 		for (Coord coord : path.path()) {
 			// Skip cities (start and end points)
@@ -1255,8 +1286,10 @@ class SimpleAI implements AI {
 			}
 
 			// Only place rail if there isn't one already
-			if (!gs.rails().containsKey(coord)) {
+			if (!gs.rails().containsKey(coord)
+					&& gs.map().cell(coord.x(), coord.y()).buildCost() <= remainingBuildCapacity) {
 				railActions.add(Action.buildRail(coord.x(), coord.y()));
+				remainingBuildCapacity -= gs.map().cell(coord.x(), coord.y()).buildCost();
 			}
 		}
 
@@ -1291,6 +1324,7 @@ class SimpleAI implements AI {
 				namoaPathsForCityMap.put(city.id(), new NAMOAPathsForCity(city, possiblePathsMap));
 			}
 		}
+
 		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
 		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
 			for (NAMOAPath path : cheapestPaths) {
