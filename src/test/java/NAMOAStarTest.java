@@ -215,10 +215,10 @@ public class NAMOAStarTest {
     // Skip for now as cost may be
     // @Test("PathCost dominance logic test")
     public void testPathCost_Dominance() {
-        PathCost cost1 = new PathCost(5, 10);
-        PathCost cost2 = new PathCost(6, 11);
-        PathCost cost3 = new PathCost(5, 11);
-        PathCost cost4 = new PathCost(6, 10);
+        PathCost cost1 = new PathCost(5, 10, 0);
+        PathCost cost2 = new PathCost(6, 11, 1);
+        PathCost cost3 = new PathCost(5, 11, 0);
+        PathCost cost4 = new PathCost(6, 10, 2);
 
         // cost1 dominates cost2 (better in both)
         assertTrue(cost1.dominates(cost2));
@@ -239,15 +239,17 @@ public class NAMOAStarTest {
 
     @Test
     public void testPathCost_Add() {
-        PathCost cost = new PathCost(5, 10);
-        PathCost newCost = cost.add(2, 3);
+        PathCost cost = new PathCost(5, 10, 1);
+        PathCost newCost = cost.add(2, 3, 2);
 
         assertEquals(7, newCost.distance());
         assertEquals(13, newCost.buildCost());
+        assertEquals(3, newCost.instability());
 
         // Original should be unchanged (immutable)
         assertEquals(5, cost.distance());
         assertEquals(10, cost.buildCost());
+        assertEquals(1, cost.instability());
     }
 
     @Test

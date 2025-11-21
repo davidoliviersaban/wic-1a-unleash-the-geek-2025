@@ -223,7 +223,7 @@ public class StupidAITest {
 	}
 
 	private NAMOAPath path(City from, City to, List<Coord> coords, int distance, int buildCost) {
-		return new NAMOAPath(from, to, coords, new PathCost(distance, buildCost));
+		return new NAMOAPath(from, to, coords, new PathCost(distance, buildCost, 0));
 	}
 
 	private Coord coord(int x, int y) {
