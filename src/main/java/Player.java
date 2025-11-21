@@ -165,7 +165,7 @@ class Player {
 			}
 		}
 		// Create initial game state
-		previousGameState = new GameState(0, mapDef, new HashMap<>(), 0, 0, null);
+		previousGameState = new GameState(0, mapDef, new HashMap<>(), 0, 0, Set.of());
 
 		Time.startRoundTimer();
 		MatchConstants.print();
@@ -256,6 +256,8 @@ class Player {
 							regionConnections[regionId].add(connection);
 						}
 						rails.put(coord, rail);
+						Print.debug("InitRound: adding rail at (" + x + "," + y + ") owned by " + owner
+								+ " with " + rail.partOfActiveConnections.size() + " active connections");
 					}
 				}
 			}
@@ -755,7 +757,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 		}
 		MapDefinition mapDef = new MapDefinition(width, height, terrainTypeArray, regionIdArray, cityIdArray,
 				new City[0], new Region[0]);
-		return new GameState(1, mapDef, Map.of(), 0, 0, null);
+		return new GameState(1, mapDef, Map.of(), 0, 0, Set.of());
 	}
 }
 
@@ -766,16 +768,17 @@ record CityConnection(City from, City to, List<Coord> path, int distance) {
 
 // NAMOA* (Non-dominated Archive Multi-Objective A*) pathfinding
 
-record PathCost(int distance, int buildCost) implements Comparable<PathCost> {
-	PathCost add(int distInc, int costInc) {
-		return new PathCost(distance + distInc, buildCost + costInc);
+record PathCost(int distance, int buildCost, int instability) implements Comparable<PathCost> {
+	PathCost add(int distInc, int costInc, int instabilityInc) {
+		return new PathCost(distance + distInc, buildCost + costInc, instability + instabilityInc);
 	}
 
 	boolean dominates(PathCost other) {
 		// Simplify the dominance check
 		// return this.buildCost < other.buildCost;
 		return this.distance <= other.distance && this.buildCost <= other.buildCost
-				&& (this.distance < other.distance || this.buildCost < other.buildCost);
+				&& (this.distance < other.distance || this.buildCost < other.buildCost)
+				&& this.instability <= other.instability;
 	}
 
 	@Override
@@ -789,7 +792,8 @@ record PathCost(int distance, int buildCost) implements Comparable<PathCost> {
 record NAMOANode(Coord coord, PathCost cost, PathCost heuristic, NAMOANode parent, long insertionOrder)
 		implements Comparable<NAMOANode> {
 	PathCost totalCost() {
-		return new PathCost(cost.distance() + heuristic.distance(), cost.buildCost() + heuristic.buildCost());
+		return new PathCost(cost.distance() + heuristic.distance(), cost.buildCost() + heuristic.buildCost(),
+				cost.instability() + heuristic.instability());
 	}
 
 	@Override
@@ -829,7 +833,7 @@ class NAMOAStar {
 		Set<Coord> closed = new HashSet<>();
 
 		// Initial node
-		PathCost initialCost = new PathCost(0, 0);
+		PathCost initialCost = new PathCost(0, 0, 0);
 		PathCost initialHeuristic = computeHeuristic(gs, startCoord, targets);
 		long insertionCounter = 0;
 		NAMOANode startNode = new NAMOANode(startCoord, initialCost, initialHeuristic, null, insertionCounter++);
@@ -875,8 +879,9 @@ class NAMOAStar {
 
 				int edgeDistance = 1;
 				int edgeCost = getMovementCost(gs, neighbor);
+				int edgeInstability = getInstabilityCost(gs, neighbor);
 
-				PathCost newCost = current.cost().add(edgeDistance, edgeCost);
+				PathCost newCost = current.cost().add(edgeDistance, edgeCost, edgeInstability);
 
 				// Check if dominated by archive at neighbor
 				List<PathCost> neighborArchive = archive.get(neighbor);
@@ -894,9 +899,16 @@ class NAMOAStar {
 		return results;
 	}
 
+	private static int getInstabilityCost(GameState gs, Coord neighbor) {
+		int regionId = gs.regionIdAt(neighbor);
+		Region region = gs.map().regions()[regionId];
+		return region.instability();
+	}
+
 	private static PathCost computeHeuristic(GameState gs, Coord from, List<City> targets) {
 		int minDistance = Integer.MAX_VALUE;
 		int minCost = 0;
+		int minInstability = 0;
 
 		for (City target : targets) {
 			int dist = Math.abs(from.x() - target.x()) + Math.abs(from.y() - target.y());
@@ -907,7 +919,7 @@ class NAMOAStar {
 			}
 		}
 
-		return new PathCost(minDistance, minCost);
+		return new PathCost(minDistance, minCost, minInstability);
 	}
 
 	private static boolean isDominated(PathCost cost, List<PathCost> archive) {
@@ -1082,8 +1094,10 @@ interface AI {
 			} else if (regionValue == worstRegionValue) {
 				regionCandidateToDisrupt.add(region);
 			}
-
-			Print.debug("Region " + region.id() + " has raw value: " + rawRegionValue + " and value: " + regionValue);
+			if (regionValue != 0) {
+				Print.debug(
+						"Region " + region.id() + " has raw value: " + rawRegionValue + " and value: " + regionValue);
+			}
 		}
 		if (regionCandidateToDisrupt.isEmpty()) {
 			Print.debug("Nothing to disrupt, sorry mate");
