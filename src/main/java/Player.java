@@ -690,7 +690,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 			return false;
 
 		// BugFix: adding check on rails presence here that was missing
-		return !(map().cityAt(c.x(), c.y()) != null) && !rails.containsKey(c);
+		return !(map().cityAt(c.x(), c.y()) != null);
 	}
 
 	GameState increaseInstability(int regionId) {
@@ -984,7 +984,7 @@ class NAMOAStar {
 
 			if (MatchConstants.isValid(nx, ny)) {
 				Coord neighbor = MatchConstants.coord(nx, ny);
-				if (gs.canBuildAt(neighbor) || gs.rails().containsKey(neighbor) || gs.map().cityAt(nx, ny) != null) {
+				if (gs.canBuildAt(neighbor) || gs.map().cityAt(nx, ny) != null) {
 					neighbors.add(neighbor);
 				}
 			}
@@ -1201,13 +1201,13 @@ class SimpleAI implements AI {
 
 			for (Coord coord : path.path()) {
 				// Skip cities (start and end points)
-				if (gs.canBuildAt(coord) == false) {
+				if (!gs.canBuildAt(coord) || gs.rails().containsKey(coord)
+						|| gs.map().regions()[gs.map().regionIdAt(coord)].instability() >= 2) {
 					continue;
 				}
 
 				// Only place rail if there isn't one already
-				if (!gs.rails().containsKey(coord)
-						&& gs.map().buildCostAt(coord.x(), coord.y()) <= remainingBuildCapacity
+				if (gs.map().buildCostAt(coord.x(), coord.y()) <= remainingBuildCapacity
 						&& !builtCoords.contains(coord)) {
 					possibleBuildCoords.add(coord);
 				}
