@@ -1112,7 +1112,10 @@ interface AI {
 					+ " regions candidate to disrupt, going to kill based on max balance of rails");
 
 			Region regionToKill = null;
-			double bestBalance = 0;
+			double bestBalance = 100;
+			if(worstRegionValue == 0 ) {
+				bestBalance = 0;
+			}
 			for (Region region : regionCandidateToDisrupt) {
 
 				double balance = 0;
