@@ -18,9 +18,6 @@ class Player {
 	public static int ME;
 	public static int OPP;
 
-	public static final int GET_TOP_PATHS_COUNT = 1;
-	public static final boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = true;
-
 	// Magic numbers
 
 	// AIs
@@ -1142,6 +1139,9 @@ record NAMOAPathsForCity(City city, Map<Integer, List<NAMOAPath>> pathsToTargets
  */
 class SimpleAI implements AI {
 
+	public static int GET_TOP_PATHS_COUNT = 1;
+	public static boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = false;
+
 	Random r = new Random();
 
 	public List<NAMOAPath> findSortedCheapestPaths(GameState gs,
@@ -1210,7 +1210,7 @@ class SimpleAI implements AI {
 				// Build rails in regions we haven't built in this turn yet
 				for (Coord buildCoord : possibleBuildCoords) {
 					int regionId = gs.regionIdAt(buildCoord);
-					if (Player.BUILD_ONLY_IN_ONE_REGION_PER_TURN && builtInRegion.contains(regionId)) {
+					if (BUILD_ONLY_IN_ONE_REGION_PER_TURN && builtInRegion.contains(regionId)) {
 						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
 								+ ") as we already built in region " + regionId + " this turn");
 						continue;
@@ -1288,15 +1288,15 @@ class SimpleAI implements AI {
 
 		Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
-		if (Player.GET_TOP_PATHS_COUNT > 0) {
+		if (GET_TOP_PATHS_COUNT > 0) {
 			Print.debug(
-					"Filtering to keep only the top " + Player.GET_TOP_PATHS_COUNT + " paths per target city");
+					"Filtering to keep only the top " + GET_TOP_PATHS_COUNT + " paths per target city");
 			// filter out similar paths to keep only the non-dominated ones
 			for (Entry<Integer, List<NAMOAPath>> entry : possiblePathsMap.entrySet()) {
 				Integer targetCityId = entry.getKey();
 				// I take the first path as is
 				List<NAMOAPath> possibleTopPaths = entry.getValue();
-				int nbTopPaths = Math.min(Player.GET_TOP_PATHS_COUNT, possibleTopPaths.size());
+				int nbTopPaths = Math.min(GET_TOP_PATHS_COUNT, possibleTopPaths.size());
 				possiblePathsMap.put(targetCityId, possibleTopPaths.subList(0, nbTopPaths));
 			}
 		}
