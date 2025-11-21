@@ -319,8 +319,8 @@ class Player {
 		if (stopGame) {
 			System.out.println("Failure!");
 		} else {
-			String output = "MESSAGE nbW: " + Player.nbWait + " nbD: " + Player.nbDisrupt + " NbBuild: "
-					+ Player.nbBuild + " NbNoBuild: " + Player.nbNoBuild + ";";
+			String output = "MESSAGE nbW: " + Player.nbWait + "   nbD: " + Player.nbDisrupt +
+					"   NbBuild: " + Player.nbBuild + "   NbNoBuild: " + Player.nbNoBuild + ";";
 			output += actions.stream().map(Action::toString).collect(Collectors.joining(";"));
 			System.out.println(output);
 		}
@@ -528,8 +528,8 @@ record Region(int id, int instability, List<Tile> cells, Set<Connection> connect
 		return instability >= MatchConstants.INSTABILITY_THRESHOLD;
 	}
 
-	Region increaseInstability() {
-		return new Region(id, instability + 1, cells, connections, hasCity);
+	Region increaseInstability(int quantity) {
+		return new Region(id, instability + quantity, cells, connections, hasCity);
 	}
 
 }
@@ -705,10 +705,10 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 		return !(map().cityAt(c.x(), c.y()) != null);
 	}
 
-	GameState increaseInstability(int regionId) {
+	GameState increaseInstability(int regionId, int quantity) {
 		Region[] newRegions = map().regions().clone();
 		if (regionId >= 0 && regionId < newRegions.length) {
-			newRegions[regionId] = newRegions[regionId].increaseInstability();
+			newRegions[regionId] = newRegions[regionId].increaseInstability(quantity);
 			if (newRegions[regionId].isInstable()) {
 				Map<Coord, Rail> railsToRemove = railsInRegionAsMap(regionId);
 				Map<Coord, Rail> newRails = new HashMap<>(rails);
@@ -1176,7 +1176,7 @@ record NAMOAPathsForCity(City city, Map<Integer, List<NAMOAPath>> pathsToTargets
 class SimpleAI implements AI {
 
 	public static int GET_TOP_PATHS_COUNT = 1;
-	public static boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = false;
+	public static boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = true;
 	public static boolean BUILD_USING_HEAT_MAP = false;
 
 	Random r = new Random();
@@ -1456,7 +1456,8 @@ class SimpleAI implements AI {
 			if (region.instability() >= instabilityThreshold) {
 				Print.debug("Considering region " + region.id() + " as disrupted due to instability "
 						+ region.instability());
-				newGs = newGs.increaseInstability(region.id());
+				newGs = newGs.increaseInstability(region.id(),
+						MatchConstants.INSTABILITY_THRESHOLD - region.instability());
 			}
 		}
 		return newGs;
@@ -1471,7 +1472,7 @@ class SimpleAI implements AI {
 		Action disruptAction = getDisruptAction(gs);
 		if (disruptAction != null) {
 			result.add(disruptAction);
-			gs = gs.increaseInstability(disruptAction.id());
+			gs = gs.increaseInstability(disruptAction.id(), 1);
 		}
 
 		Time.debugDuration("Starting NAMOA");
@@ -1495,8 +1496,13 @@ class SimpleAI implements AI {
 			} else {
 				railActions = buildRailsAlongPath(gs, cheapestPaths);
 			}
-			Player.nbBuild += railActions.size();
-			Player.nbNoBuild += railActions.size() == 0 ? 1 : 0;
+			if (railActions.size() > 0) {
+				Player.nbBuild += railActions.size();
+				Print.debug("Built " + railActions.size() + " rails this turn");
+			} else {
+				Player.nbNoBuild++;
+				Print.debug("No rails built this turn");
+			}
 			result.addAll(railActions);
 			Time.debugDuration("Finished building rails along heat map");
 		}
