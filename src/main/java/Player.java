@@ -698,7 +698,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 
 	boolean canBuildAt(Coord c) {
 		int regionId = map.regionIdAt(c.x(), c.y());
-		if (map().regions()[regionId].isInstable())
+		if (map().regions()[regionId].isInstable() || map().regions()[regionId].instability() >= 2)
 			return false;
 
 		// BugFix: adding check on rails presence here that was missing
@@ -1120,7 +1120,7 @@ interface AI {
 
 			Region regionToKill = null;
 			double bestBalance = 100;
-			if(worstRegionValue == 0 ) {
+			if (worstRegionValue == 0) {
 				bestBalance = 0;
 			}
 			for (Region region : regionCandidateToDisrupt) {
@@ -1174,6 +1174,7 @@ class SimpleAI implements AI {
 
 	public static int GET_TOP_PATHS_COUNT = 1;
 	public static boolean BUILD_ONLY_IN_ONE_REGION_PER_TURN = false;
+	public static boolean BUILD_USING_HEAT_MAP = false;
 
 	Random r = new Random();
 
@@ -1464,10 +1465,16 @@ class SimpleAI implements AI {
 
 		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
 		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
-			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
+			List<Action> railActions;
+			if (BUILD_USING_HEAT_MAP) {
+				railActions = buildRailsAlongHeatMap(gs, cheapestPaths);
+			} else {
+				railActions = buildRailsAlongPath(gs, cheapestPaths);
+			}
 			Player.nbBuild += railActions.size();
 			Player.nbNoBuild += railActions.size() == 0 ? 1 : 0;
 			result.addAll(railActions);
+			Time.debugDuration("Finished building rails along heat map");
 		}
 
 		Time.debugDuration("Finished NAMOA");
