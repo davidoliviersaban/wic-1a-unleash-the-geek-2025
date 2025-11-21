@@ -1114,7 +1114,10 @@ interface AI {
 		}
 		if (regionCandidateToDisrupt.isEmpty()) {
 			Print.debug("Nothing to disrupt, sorry mate");
-		} else {
+		} else  if (regionCandidateToDisrupt.size() == 1) {
+			Print.debug("Single region to disrupt, just do it");
+			result = Action.disruptRegion(regionCandidateToDisrupt.get(0).id());
+		}		else {
 			Print.debug(regionCandidateToDisrupt.size()
 					+ " regions candidate to disrupt, going to kill based on max balance of rails");
 
