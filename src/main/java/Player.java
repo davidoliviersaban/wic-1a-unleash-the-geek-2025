@@ -240,6 +240,7 @@ class Player {
 
 					Rail rail = new Rail(x, y, owner);
 					rail.partOfActiveConnections = new ArrayList<>();
+					rails.put(coord, rail);
 
 					if (partOfActiveConnectionStr.charAt(0) != 'x') {
 						String[] connections = partOfActiveConnectionStr.split(",");
@@ -255,10 +256,9 @@ class Player {
 							}
 							regionConnections[regionId].add(connection);
 						}
-						rails.put(coord, rail);
-						Print.debug("InitRound: adding rail at (" + x + "," + y + ") owned by " + owner
-								+ " with " + rail.partOfActiveConnections.size() + " active connections");
 					}
+					Print.debug("InitRound: adding rail at (" + x + "," + y + ") owned by " + owner
+							+ " with " + rail.partOfActiveConnections.size() + " active connections");
 				}
 			}
 		}
@@ -1307,15 +1307,17 @@ class SimpleAI implements AI {
 		}
 
 		// I compute possible paths to those target cities
-		Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() + " to "
-				+ targetCities.stream().map(c -> Integer.toString(c.id()))
-						.collect(java.util.stream.Collectors.joining(", ")));
+		// Print.debug(duration + "ms: Computing NAMOA* paths from city " + city.id() +
+		// " to "
+		// + targetCities.stream().map(c -> Integer.toString(c.id()))
+		// .collect(java.util.stream.Collectors.joining(", ")));
 
 		Map<Integer, List<NAMOAPath>> possiblePathsMap = NAMOAStar.findPaths(gs, city, targetCities);
 
 		if (GET_TOP_PATHS_COUNT > 0) {
-			Print.debug(
-					"Filtering to keep only the top " + GET_TOP_PATHS_COUNT + " paths per target city");
+			// Print.debug(
+			// "Filtering to keep only the top " + GET_TOP_PATHS_COUNT + " paths per target
+			// city");
 			// filter out similar paths to keep only the non-dominated ones
 			for (Entry<Integer, List<NAMOAPath>> entry : possiblePathsMap.entrySet()) {
 				Integer targetCityId = entry.getKey();
