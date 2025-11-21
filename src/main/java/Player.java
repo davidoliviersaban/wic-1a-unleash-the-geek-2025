@@ -257,8 +257,9 @@ class Player {
 							regionConnections[regionId].add(connection);
 						}
 					}
-					Print.debug("InitRound: adding rail at (" + x + "," + y + ") owned by " + owner
-							+ " with " + rail.partOfActiveConnections.size() + " active connections");
+					// Print.debug("InitRound: adding rail at (" + x + "," + y + ") owned by " +
+					// owner
+					// + " with " + rail.partOfActiveConnections.size() + " active connections");
 				}
 			}
 		}
@@ -1069,8 +1070,9 @@ interface AI {
 					}
 				}
 			}
-			Print.debug("Connection from " + conn.fromId() + " to " + conn.toId() + " has worth: "
-					+ connectionWorthMap.getOrDefault(conn, 0));
+			// Print.debug("Connection from " + conn.fromId() + " to " + conn.toId() + " has
+			// worth: "
+			// + connectionWorthMap.getOrDefault(conn, 0));
 		}
 
 		double worstRegionValue = 0;
@@ -1102,7 +1104,8 @@ interface AI {
 		if (regionCandidateToDisrupt.isEmpty()) {
 			Print.debug("Nothing to disrupt, sorry mate");
 		} else {
-			Print.debug("One or several regions candidate to disrupt, going to kill based on max balance of rails");
+			Print.debug(regionCandidateToDisrupt.size()
+					+ " regions candidate to disrupt, going to kill based on max balance of rails");
 
 			Region regionToKill = null;
 			double bestBalance = 0;
@@ -1126,7 +1129,7 @@ interface AI {
 				// Print.debug("Region " + region.id() + " has a modulated rail balance of: " +
 				// balance);
 
-				if (balance < bestBalance) {
+				if (balance <= bestBalance) {
 					bestBalance = balance;
 					regionToKill = region;
 				}
