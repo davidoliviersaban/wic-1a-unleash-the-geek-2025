@@ -698,7 +698,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 
 	boolean canBuildAt(Coord c) {
 		int regionId = map.regionIdAt(c.x(), c.y());
-		if (map().regions()[regionId].isInstable() || map().regions()[regionId].instability() >= 2)
+		if (map().regions()[regionId].isInstable())
 			return false;
 
 		// BugFix: adding check on rails presence here that was missing
@@ -1443,6 +1443,21 @@ class SimpleAI implements AI {
 		}
 	}
 
+	public GameState considerDisruptedRegionsWithInstability(GameState gs, int instabilityThreshold) {
+		GameState newGs = gs;
+		for (Region region : gs.map().regions()) {
+			if (region.isInstable()) {
+				continue;
+			}
+			if (region.instability() >= instabilityThreshold) {
+				Print.debug("Considering region " + region.id() + " as disrupted due to instability "
+						+ region.instability());
+				newGs = newGs.increaseInstability(region.id());
+			}
+		}
+		return newGs;
+	}
+
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
@@ -1457,6 +1472,8 @@ class SimpleAI implements AI {
 
 		Time.debugDuration("Starting NAMOA");
 		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
+
+		gs = considerDisruptedRegionsWithInstability(gs, 2);
 
 		for (City city : gs.map().citiesById()) {
 			NAMOAPathsForCity namoaPathsForCity = findNAMOAPathsForCity(city, gs);
