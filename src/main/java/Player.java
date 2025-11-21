@@ -11,6 +11,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
+import javax.print.attribute.standard.MediaSize.NA;
+
 class Player {
 
 	// Easy to find switches
@@ -19,6 +21,8 @@ class Player {
 	public static int OPP;
 	public static int nbWait = 0;
 	public static int nbDisrupt = 0;
+	public static int nbBuild = 0;
+	public static int nbNoBuild = 0;
 
 	// Magic numbers
 
@@ -284,6 +288,8 @@ class Player {
 		// Create updated game state
 		result = new GameState(result.round(), result.map(), rails, myScore, foeScore,
 				resetCachedConnectionsSet);
+		Print.debug("Cached connections after initRound: " + resetCachedConnectionsSet.stream()
+				.map(c -> c.fromId() + "-" + c.toId()).collect(java.util.stream.Collectors.joining(", ")));
 		Time.debugDuration("Finished initround");
 
 		return result;
@@ -313,7 +319,8 @@ class Player {
 		if (stopGame) {
 			System.out.println("Failure!");
 		} else {
-			String output = "MESSAGE nbW: " + Player.nbWait + " nbD: " + Player.nbDisrupt + ";";
+			String output = "MESSAGE nbW: " + Player.nbWait + " nbD: " + Player.nbDisrupt + " NbBuild: "
+					+ Player.nbBuild + " NbNoBuild: " + Player.nbNoBuild + ";";
 			output += actions.stream().map(Action::toString).collect(Collectors.joining(";"));
 			System.out.println(output);
 		}
@@ -1196,6 +1203,63 @@ class SimpleAI implements AI {
 		return paths;
 	}
 
+	List<Action> buildRailsAlongHeatMap(GameState gs, List<NAMOAPath> paths) {
+		Set<Action> railActions = new TreeSet<>();
+		int remainingBuildCapacity = MatchConstants.MAX_ACTIONS_PER_TURN;
+		Set<Coord> builtCoords = new HashSet<>();
+		Set<Integer> builtInRegion = new HashSet<>();
+
+		HeatMap heatMap = new HeatMap();
+		heatMap.build(paths);
+
+		List<Map.Entry<Coord, Integer>> possibleBuildCoords = heatMap.sortedHeatMapEntries;
+
+		// Try to build as many rails as possible along the heat map
+		for (int i = 0; i < MatchConstants.MAX_ACTIONS_PER_TURN; i++) {
+			builtInRegion.clear();
+
+			// Build rails in regions we haven't built in this turn yet
+			Set<Coord> coordsToRemove = new HashSet<>();
+			for (Map.Entry<Coord, Integer> buildCoordEntry : possibleBuildCoords) {
+				Coord buildCoord = buildCoordEntry.getKey();
+				int regionId = gs.regionIdAt(buildCoord);
+				if (BUILD_ONLY_IN_ONE_REGION_PER_TURN && builtInRegion.contains(regionId)) {
+					Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+							+ ") as we already built in region " + regionId + " this turn");
+					continue;
+				}
+				coordsToRemove.add(buildCoord);
+				if (builtCoords.contains(buildCoord)) {
+					Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+							+ ") as we already built there this turn");
+					continue;
+				}
+				if (gs.map().buildCostAt(buildCoord.x(), buildCoord.y()) > remainingBuildCapacity) {
+					Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
+							+ ") as not enough remaining build capacity");
+					continue;
+				}
+				railActions.add(Action.buildRail(buildCoord.x(), buildCoord.y()));
+				remainingBuildCapacity -= gs.map().buildCostAt(buildCoord.x(), buildCoord.y());
+				builtInRegion.add(regionId); // remember we've built in this region
+				builtCoords.add(buildCoord); // remember we've built here
+
+				Print.debug("Placing rail at (" + buildCoord.x() + "," + buildCoord.y() + ") in region " + regionId
+						+ ", remaining build capacity: " + remainingBuildCapacity);
+
+				if (remainingBuildCapacity <= 0) {
+					Print.debug("No remaining build capacity, stopping rail placement");
+					return railActions.stream().toList();
+				}
+			}
+			possibleBuildCoords.removeAll(coordsToRemove);
+			if (possibleBuildCoords.isEmpty()) {
+				break;
+			}
+		}
+		return railActions.stream().toList();
+	}
+
 	/**
 	 * Builds rails along a path where rails don't already exist.
 	 * Returns a list of PLACE_TRACKS actions for cells that need rails.
@@ -1276,7 +1340,6 @@ class SimpleAI implements AI {
 				}
 			}
 		}
-
 		return railActions.stream().toList();
 	}
 
@@ -1303,6 +1366,11 @@ class SimpleAI implements AI {
 
 		// I target only cities I don't have a connection to yet
 		List<City> targetCities = new ArrayList<>();
+
+		Print.debug(fgs.cachedConnections().stream().map(c -> c.fromId() + "-" + c.toId()).collect(
+				java.util.stream.Collectors.joining(", ")) + " cached connections before NAMOA* for city " + city.id()
+				+ " desires " + city.desiredCityIds().stream().map(String::valueOf)
+						.collect(java.util.stream.Collectors.joining(", ")));
 		for (int desiredCityId : city.desiredCityIds()) {
 			if (!fgs.cachedConnections()
 					.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
@@ -1312,7 +1380,16 @@ class SimpleAI implements AI {
 
 		Long duration = Time.getRoundDuration();
 		if (targetCities.isEmpty() || !Time.isTimeLeft(gs.round() == 1)) {
-			Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id());
+			if (targetCities.isEmpty()) {
+				Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id()
+						+ " - all desired cities already connected (desired: "
+						+ city.desiredCityIds().stream().map(String::valueOf)
+								.collect(java.util.stream.Collectors.joining(","))
+						+ ", cached connections: " + fgs.cachedConnections().size() + ")");
+			} else {
+				Print.debug(duration + "ms: Not computing NAMOA* paths from city " + city.id()
+						+ " - time limit reached");
+			}
 			return null;
 		}
 
@@ -1342,6 +1419,26 @@ class SimpleAI implements AI {
 		return new NAMOAPathsForCity(city, possiblePathsMap);
 	}
 
+	class HeatMap {
+		Map<Coord, Integer> heatMap;
+		List<Map.Entry<Coord, Integer>> sortedHeatMapEntries;
+
+		HeatMap() {
+			heatMap = new HashMap<>();
+		}
+
+		void build(List<NAMOAPath> paths) {
+			for (NAMOAPath path : paths) {
+				for (Coord coord : path.path()) {
+					heatMap.put(coord, heatMap.getOrDefault(coord, 0) + 1);
+				}
+			}
+			sortedHeatMapEntries = new ArrayList<>(heatMap.entrySet());
+			// Sort descending by heat value
+			sortedHeatMapEntries.sort((e1, e2) -> Integer.compare(-e2.getValue(), -e1.getValue()));
+		}
+	}
+
 	@Override
 	public List<Action> compute(GameState gs) {
 		List<Action> result = new ArrayList<Action>();
@@ -1368,6 +1465,8 @@ class SimpleAI implements AI {
 		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
 		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
 			List<Action> railActions = buildRailsAlongPath(gs, cheapestPaths);
+			Player.nbBuild += railActions.size();
+			Player.nbNoBuild += railActions.size() == 0 ? 1 : 0;
 			result.addAll(railActions);
 		}
 
