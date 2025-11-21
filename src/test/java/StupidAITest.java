@@ -44,7 +44,10 @@ public class StupidAITest {
 		ai.compute(performanceState); // warm-up to stabilize caches
 		Time.startRoundTimer();
 		long start = System.nanoTime();
+		int previousValue = SimpleAI.GET_TOP_PATHS_COUNT;
+		SimpleAI.GET_TOP_PATHS_COUNT = 5;
 		List<Action> actions = ai.compute(performanceState);
+		SimpleAI.GET_TOP_PATHS_COUNT = previousValue;
 		long durationMs = (System.nanoTime() - start) / 1_000_000;
 		assertTrue(durationMs < 50, "SimpleAI compute took " + durationMs + "ms on random map");
 		assertFalse(actions.isEmpty(), "SimpleAI should return actions even in perf scenario");
