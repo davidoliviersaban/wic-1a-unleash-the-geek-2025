@@ -357,8 +357,8 @@ public class NAMOAStarTest {
         assertEquals(cities.get(2), path.to());
 
         // Verify the path coordinates - with NORTH, EAST, SOUTH, WEST priority
-        // Actual path: (15,3) -> (15,2) -> (16,2) -> (17,2) -> (17,1) -> (18,1)
-        // This follows: N, E, E, S, E
+        // Actual path: (15,3) -> (15,2) -> (15,1) -> (16,1) -> (17,1) -> (18,1)
+        // This follows: N, N, E, E, E
         List<Coord> pathCoords = path.path();
         assertEquals(6, pathCoords.size(), "Path should have 6 coordinates");
 
@@ -370,15 +370,15 @@ public class NAMOAStarTest {
         assertEquals(15, pathCoords.get(1).x());
         assertEquals(2, pathCoords.get(1).y());
 
-        // Step 2: East to (16,2)
-        assertEquals(16, pathCoords.get(2).x());
-        assertEquals(2, pathCoords.get(2).y());
+        // Step 2: North to (15,1)
+        assertEquals(15, pathCoords.get(2).x());
+        assertEquals(1, pathCoords.get(2).y());
 
-        // Step 3: East to (17,2)
-        assertEquals(17, pathCoords.get(3).x());
-        assertEquals(2, pathCoords.get(3).y());
+        // Step 3: East to (16,1)
+        assertEquals(16, pathCoords.get(3).x());
+        assertEquals(1, pathCoords.get(3).y());
 
-        // Step 4: South to (17,1)
+        // Step 4: East to (17,1)
         assertEquals(17, pathCoords.get(4).x());
         assertEquals(1, pathCoords.get(4).y());
 
@@ -390,6 +390,86 @@ public class NAMOAStarTest {
         MatchConstants.width = 10;
         MatchConstants.height = 10;
         MatchConstants.initCoords(10, 10);
+    }
+
+    @Test
+    public void testDirectionPriority_FromTopLeftToBottomRightPrefersEastThenSouth() {
+        int originalWidth = MatchConstants.width;
+        int originalHeight = MatchConstants.height;
+        MatchConstants.width = 5;
+        MatchConstants.height = 5;
+        MatchConstants.initCoords(5, 5);
+
+        try {
+            Map<Integer, City> cities = new HashMap<>();
+            cities.put(0, new City(0, 0, 0, 0, List.of(1)));
+            cities.put(1, new City(1, 2, 2, 0, List.of(0)));
+
+            TerrainType[][] terrain = createTerrainGrid(5, 5, TerrainType.PLAIN);
+            GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
+
+            City start = cities.get(0);
+            City target = cities.get(1);
+            Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, List.of(target));
+
+            assertNotNull(results);
+            List<NAMOAPath> paths = results.get(target.id());
+            assertNotNull(paths);
+            assertFalse(paths.isEmpty());
+
+            List<Coord> expectedPath = List.of(
+                    MatchConstants.coord(0, 0),
+                    MatchConstants.coord(1, 0),
+                    MatchConstants.coord(2, 0),
+                    MatchConstants.coord(2, 1),
+                    MatchConstants.coord(2, 2));
+
+            assertEquals(expectedPath, paths.get(0).path(), "Path should follow E,E,S,S priority");
+        } finally {
+            MatchConstants.width = originalWidth;
+            MatchConstants.height = originalHeight;
+            MatchConstants.initCoords(originalWidth, originalHeight);
+        }
+    }
+
+    @Test
+    public void testDirectionPriority_FromBottomRightToTopLeftPrefersNorthThenWest() {
+        int originalWidth = MatchConstants.width;
+        int originalHeight = MatchConstants.height;
+        MatchConstants.width = 5;
+        MatchConstants.height = 5;
+        MatchConstants.initCoords(5, 5);
+
+        try {
+            Map<Integer, City> cities = new HashMap<>();
+            cities.put(0, new City(0, 0, 0, 0, List.of(1)));
+            cities.put(1, new City(1, 2, 2, 0, List.of(0)));
+
+            TerrainType[][] terrain = createTerrainGrid(5, 5, TerrainType.PLAIN);
+            GameState gs = createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
+
+            City start = cities.get(1);
+            City target = cities.get(0);
+            Map<Integer, List<NAMOAPath>> results = NAMOAStar.findPaths(gs, start, List.of(target));
+
+            assertNotNull(results);
+            List<NAMOAPath> paths = results.get(target.id());
+            assertNotNull(paths);
+            assertFalse(paths.isEmpty());
+
+            List<Coord> expectedPath = List.of(
+                    MatchConstants.coord(2, 2),
+                    MatchConstants.coord(2, 1),
+                    MatchConstants.coord(2, 0),
+                    MatchConstants.coord(1, 0),
+                    MatchConstants.coord(0, 0));
+
+            assertEquals(expectedPath, paths.get(0).path(), "Path should follow N,N,W,W priority");
+        } finally {
+            MatchConstants.width = originalWidth;
+            MatchConstants.height = originalHeight;
+            MatchConstants.initCoords(originalWidth, originalHeight);
+        }
     }
 
     // Helper methods

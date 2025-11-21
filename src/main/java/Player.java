@@ -786,14 +786,19 @@ record PathCost(int distance, int buildCost) implements Comparable<PathCost> {
 	}
 }
 
-record NAMOANode(Coord coord, PathCost cost, PathCost heuristic, NAMOANode parent) implements Comparable<NAMOANode> {
+record NAMOANode(Coord coord, PathCost cost, PathCost heuristic, NAMOANode parent, long insertionOrder)
+		implements Comparable<NAMOANode> {
 	PathCost totalCost() {
 		return new PathCost(cost.distance() + heuristic.distance(), cost.buildCost() + heuristic.buildCost());
 	}
 
 	@Override
 	public int compareTo(NAMOANode other) {
-		return this.totalCost().compareTo(other.totalCost());
+		int comparison = this.totalCost().compareTo(other.totalCost());
+		if (comparison != 0) {
+			return comparison;
+		}
+		return Long.compare(this.insertionOrder, other.insertionOrder);
 	}
 }
 
@@ -826,7 +831,8 @@ class NAMOAStar {
 		// Initial node
 		PathCost initialCost = new PathCost(0, 0);
 		PathCost initialHeuristic = computeHeuristic(gs, startCoord, targets);
-		NAMOANode startNode = new NAMOANode(startCoord, initialCost, initialHeuristic, null);
+		long insertionCounter = 0;
+		NAMOANode startNode = new NAMOANode(startCoord, initialCost, initialHeuristic, null, insertionCounter++);
 		open.add(startNode);
 
 		int nodesExpanded = 0;
@@ -876,7 +882,7 @@ class NAMOAStar {
 				List<PathCost> neighborArchive = archive.get(neighbor);
 				if (!isDominated(newCost, neighborArchive)) {
 					PathCost newHeuristic = computeHeuristic(gs, neighbor, targets);
-					NAMOANode newNode = new NAMOANode(neighbor, newCost, newHeuristic, current);
+					NAMOANode newNode = new NAMOANode(neighbor, newCost, newHeuristic, current, insertionCounter++);
 					open.add(newNode);
 
 					// Update archive with size limit
@@ -915,10 +921,6 @@ class NAMOAStar {
 			}
 		}
 		return false;
-	}
-
-	private static void addToArchive(Map<Coord, List<PathCost>> archive, Coord coord, PathCost newCost) {
-		addToArchiveLimited(archive, coord, newCost, Integer.MAX_VALUE);
 	}
 
 	private static void addToArchiveLimited(Map<Coord, List<PathCost>> archive, Coord coord, PathCost newCost,
@@ -1208,36 +1210,45 @@ class SimpleAI implements AI {
 				builtInRegion.clear();
 
 				// Build rails in regions we haven't built in this turn yet
+				Set<Coord> coordsToRemove = new HashSet<>();
 				for (Coord buildCoord : possibleBuildCoords) {
 					int regionId = gs.regionIdAt(buildCoord);
 					if (BUILD_ONLY_IN_ONE_REGION_PER_TURN && builtInRegion.contains(regionId)) {
 						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
-								+ ") as we already built in region " + regionId + " this turn");
+								+ ") as we already built in region " + regionId + " this turn" + ", connecting city "
+								+ path.to().id());
 						continue;
 					}
+					coordsToRemove.add(buildCoord);
 					if (builtCoords.contains(buildCoord)) {
 						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
-								+ ") as we already built there this turn");
+								+ ") as we already built there this turn" + ", connecting city "
+								+ path.to().id());
 						continue;
 					}
 					if (gs.map().buildCostAt(buildCoord.x(), buildCoord.y()) > remainingBuildCapacity) {
 						Print.debug("Skipping rail at (" + buildCoord.x() + "," + buildCoord.y()
-								+ ") as not enough remaining build capacity");
+								+ ") as not enough remaining build capacity" + ", connecting city "
+								+ path.to().id());
 						continue;
 					}
-
 					railActions.add(Action.buildRail(buildCoord.x(), buildCoord.y()));
 					remainingBuildCapacity -= gs.map().buildCostAt(buildCoord.x(), buildCoord.y());
 					builtInRegion.add(regionId); // remember we've built in this region
 					builtCoords.add(buildCoord); // remember we've built here
 
 					Print.debug("Placing rail at (" + buildCoord.x() + "," + buildCoord.y() + ") in region " + regionId
-							+ ", remaining build capacity: " + remainingBuildCapacity);
+							+ ", remaining build capacity: " + remainingBuildCapacity + ", connecting city "
+							+ path.to().id());
 
 					if (remainingBuildCapacity <= 0) {
 						Print.debug("No remaining build capacity, stopping rail placement");
 						return railActions.stream().toList();
 					}
+				}
+				possibleBuildCoords.removeAll(coordsToRemove);
+				if (possibleBuildCoords.isEmpty()) {
+					break;
 				}
 			}
 		}

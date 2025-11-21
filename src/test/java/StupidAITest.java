@@ -39,6 +39,18 @@ public class StupidAITest {
 	}
 
 	@Test
+	public void testComputePerformanceOnRandomizedMap() {
+		GameState performanceState = createRandomPerformanceGameState(30, 20, 15, 1234L);
+		ai.compute(performanceState); // warm-up to stabilize caches
+		Time.startRoundTimer();
+		long start = System.nanoTime();
+		List<Action> actions = ai.compute(performanceState);
+		long durationMs = (System.nanoTime() - start) / 1_000_000;
+		assertTrue(durationMs < 50, "SimpleAI compute took " + durationMs + "ms on random map");
+		assertFalse(actions.isEmpty(), "SimpleAI should return actions even in perf scenario");
+	}
+
+	@Test
 	public void testFindSortedCheapestPathsOrdersByBuildCost() {
 		City origin = gameState.map().citiesById()[0];
 		City target1 = gameState.map().citiesById()[1];
@@ -59,6 +71,72 @@ public class StupidAITest {
 		List<NAMOAPath> sortedPaths = ai.findSortedCheapestPaths(gameState, cache);
 
 		assertEquals(List.of(cheap, expensive), sortedPaths);
+	}
+
+	@Test
+	public void testFindSortedCheapestPathsPreservesDirectionPriority() {
+		int originalWidth = MatchConstants.width;
+		int originalHeight = MatchConstants.height;
+		MatchConstants.width = 5;
+		MatchConstants.height = 5;
+		MatchConstants.initCoords(5, 5);
+
+		try {
+			Map<Integer, City> cities = new HashMap<>();
+			cities.put(0, new City(0, 0, 0, 0, List.of(1)));
+			cities.put(1, new City(1, 2, 2, 0, List.of(0)));
+
+			TerrainType[][] terrain = new TerrainType[5][5];
+			for (int x = 0; x < 5; x++) {
+				for (int y = 0; y < 5; y++) {
+					terrain[x][y] = TerrainType.PLAIN;
+				}
+			}
+
+			GameState directionalState = NAMOAStarTest.createGameStateWithCitiesAndTerrain(cities, Map.of(), terrain);
+
+			City start = cities.get(0);
+			City target = cities.get(1);
+			Map<Integer, List<NAMOAPath>> startPaths = NAMOAStar.findPaths(directionalState, start, List.of(target));
+			Map<Integer, List<NAMOAPath>> reversePaths = NAMOAStar.findPaths(directionalState, target, List.of(start));
+
+			NAMOAPath eastSouthPath = startPaths.get(target.id()).get(0);
+			NAMOAPath northWestPath = reversePaths.get(start.id()).get(0);
+
+			List<Coord> expectedForward = List.of(
+					MatchConstants.coord(0, 0),
+					MatchConstants.coord(1, 0),
+					MatchConstants.coord(2, 0),
+					MatchConstants.coord(2, 1),
+					MatchConstants.coord(2, 2));
+			List<Coord> expectedReverse = List.of(
+					MatchConstants.coord(2, 2),
+					MatchConstants.coord(2, 1),
+					MatchConstants.coord(2, 0),
+					MatchConstants.coord(1, 0),
+					MatchConstants.coord(0, 0));
+
+			assertEquals(expectedForward, eastSouthPath.path(), "Forward path should be E,E,S,S");
+			assertEquals(expectedReverse, northWestPath.path(), "Reverse path should be N,N,W,W");
+
+			Map<Integer, List<NAMOAPath>> forwardPerTarget = new LinkedHashMap<>();
+			forwardPerTarget.put(target.id(), List.of(eastSouthPath));
+			Map<Integer, List<NAMOAPath>> reversePerTarget = new LinkedHashMap<>();
+			reversePerTarget.put(start.id(), List.of(northWestPath));
+
+			Map<Integer, NAMOAPathsForCity> cache = new HashMap<>();
+			cache.put(start.id(), new NAMOAPathsForCity(start, forwardPerTarget));
+			cache.put(target.id(), new NAMOAPathsForCity(target, reversePerTarget));
+
+			List<NAMOAPath> sortedPaths = ai.findSortedCheapestPaths(directionalState, cache);
+
+			assertEquals(List.of(eastSouthPath, northWestPath), sortedPaths,
+					"SimpleAI should keep NAMOA direction priority when sorting equal-cost paths");
+		} finally {
+			MatchConstants.width = originalWidth;
+			MatchConstants.height = originalHeight;
+			MatchConstants.initCoords(originalWidth, originalHeight);
+		}
 	}
 
 	@Test
@@ -208,6 +286,91 @@ public class StupidAITest {
 					continue;
 				}
 				MatchConstants.connectionLookup[i][j] = new Connection(cityI.id(), cityJ.id());
+			}
+		}
+
+		MapDefinition map = new MapDefinition(width, height, terrain, regionIds, cityIds, citiesById, regions);
+		return new GameState(1, map, new HashMap<Coord, Rail>(), 0, 0, new HashSet<>());
+	}
+
+	private GameState createRandomPerformanceGameState(int width, int height, int cityCount, long seed) {
+		MatchConstants.width = width;
+		MatchConstants.height = height;
+		MatchConstants.initCoords(width, height);
+
+		Random random = new Random(seed);
+		int regionWidth = 2;
+		int regionCount = (int) Math.ceil((double) width / regionWidth);
+		int[] regionMapping = new int[regionCount];
+		for (int i = 0; i < regionCount; i++) {
+			regionMapping[i] = i;
+		}
+		for (int i = regionMapping.length - 1; i > 0; i--) {
+			int j = random.nextInt(i + 1);
+			int tmp = regionMapping[i];
+			regionMapping[i] = regionMapping[j];
+			regionMapping[j] = tmp;
+		}
+
+		TerrainType[][] terrain = new TerrainType[width][height];
+		int[][] regionIds = new int[width][height];
+		int[][] cityIds = new int[width][height];
+		TerrainType[] terrainChoices = new TerrainType[] { TerrainType.PLAIN, TerrainType.RIVER, TerrainType.MOUNTAIN };
+		for (int x = 0; x < width; x++) {
+			for (int y = 0; y < height; y++) {
+				terrain[x][y] = terrainChoices[random.nextInt(terrainChoices.length)];
+				regionIds[x][y] = regionMapping[Math.min(x / regionWidth, regionCount - 1)];
+				cityIds[x][y] = -1;
+			}
+		}
+
+		City[] citiesById = new City[cityCount];
+		Set<Coord> usedCoords = new HashSet<>();
+		for (int i = 0; i < cityCount; i++) {
+			int x;
+			int y;
+			do {
+				x = random.nextInt(width);
+				y = random.nextInt(height);
+			} while (!usedCoords.add(MatchConstants.coord(x, y)));
+
+			List<Integer> desired = new ArrayList<>();
+			for (int candidate = 0; candidate < i; candidate++) {
+				if (random.nextBoolean()) {
+					desired.add(candidate);
+				}
+			}
+			City city = new City(i, x, y, regionIds[x][y], List.copyOf(desired));
+			citiesById[i] = city;
+			cityIds[x][y] = city.id();
+		}
+
+		Map<Integer, List<Tile>> cellsByRegion = new HashMap<>();
+		Map<Integer, Boolean> regionHasCity = new HashMap<>();
+		for (int x = 0; x < width; x++) {
+			for (int y = 0; y < height; y++) {
+				City city = cityIds[x][y] >= 0 ? citiesById[cityIds[x][y]] : null;
+				Tile tile = new Tile(x, y, regionIds[x][y], terrain[x][y], city);
+				cellsByRegion.computeIfAbsent(regionIds[x][y], k -> new ArrayList<>()).add(tile);
+				if (city != null) {
+					regionHasCity.put(regionIds[x][y], true);
+				}
+			}
+		}
+
+		Region[] regions = new Region[regionCount];
+		for (int id = 0; id < regionCount; id++) {
+			List<Tile> cells = cellsByRegion.getOrDefault(id, new ArrayList<>());
+			regions[id] = new Region(id, random.nextInt(3), cells, new HashSet<>(),
+					regionHasCity.getOrDefault(id, false));
+		}
+
+		MatchConstants.cityCount = cityCount;
+		MatchConstants.regionsCount = regionCount;
+		MatchConstants.connectionLookup = new Connection[cityCount][cityCount];
+		for (int i = 0; i < cityCount; i++) {
+			for (int j = 0; j < cityCount; j++) {
+				MatchConstants.connectionLookup[i][j] = new Connection(i, j);
 			}
 		}
 
