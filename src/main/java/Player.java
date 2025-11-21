@@ -1114,10 +1114,10 @@ interface AI {
 		}
 		if (regionCandidateToDisrupt.isEmpty()) {
 			Print.debug("Nothing to disrupt, sorry mate");
-		} else  if (regionCandidateToDisrupt.size() == 1) {
+		} else if (regionCandidateToDisrupt.size() == 1) {
 			Print.debug("Single region to disrupt, just do it");
 			result = Action.disruptRegion(regionCandidateToDisrupt.get(0).id());
-		}		else {
+		} else {
 			Print.debug(regionCandidateToDisrupt.size()
 					+ " regions candidate to disrupt, going to kill based on max balance of rails");
 
@@ -1296,6 +1296,10 @@ class SimpleAI implements AI {
 						+ path.to().id());
 				continue;
 			}
+
+			possibleBuildCoords.sort((c1, c2) -> Integer.compare(
+					gs.map().buildCostAt(c1.x(), c1.y()),
+					gs.map().buildCostAt(c2.x(), c2.y())));
 
 			// Try to build as many rails as possible along the path
 			for (int i = 0; i < MatchConstants.MAX_ACTIONS_PER_TURN; i++) {
