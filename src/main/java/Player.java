@@ -706,7 +706,7 @@ record GameState(int round, MapDefinition map, Map<Coord, Rail> rails, int mySco
 	}
 
 	GameState increaseInstability(int regionId, int quantity) {
-		Region[] newRegions = map().regions().clone();
+		Region[] newRegions = map().regions();
 		if (regionId >= 0 && regionId < newRegions.length) {
 			newRegions[regionId] = newRegions[regionId].increaseInstability(quantity);
 			if (newRegions[regionId].isInstable()) {
@@ -1293,7 +1293,9 @@ class SimpleAI implements AI {
 
 			if (possibleBuildCoords.isEmpty()) {
 				Print.debug("No possible build coords along path from city " + path.from().id() + " to city "
-						+ path.to().id());
+						+ path.to().id() + " path was: " + path.path().stream()
+								.map(c -> "(" + c.x() + "," + c.y() + ")")
+								.collect(java.util.stream.Collectors.joining(" -> ")));
 				continue;
 			}
 
@@ -1365,7 +1367,7 @@ class SimpleAI implements AI {
 		return paths.subList(0, Math.min(nbPaths, paths.size()));
 	}
 
-	public NAMOAPathsForCity findNAMOAPathsForCity(City city, GameState gs) {
+	public NAMOAPathsForCity findNAMOAPathsForCity(City city, GameState gs, boolean filterConnectedCities) {
 		if (city.desiredCityIds().isEmpty()) {
 			return null;
 		}
@@ -1379,9 +1381,11 @@ class SimpleAI implements AI {
 				java.util.stream.Collectors.joining(", ")) + " cached connections before NAMOA* for city " + city.id()
 				+ " desires " + city.desiredCityIds().stream().map(String::valueOf)
 						.collect(java.util.stream.Collectors.joining(", ")));
+
 		for (int desiredCityId : city.desiredCityIds()) {
-			if (!fgs.cachedConnections()
-					.contains(MatchConstants.connectionLookup[city.id()][desiredCityId])) {
+			boolean alreadyConnected = fgs.cachedConnections()
+					.contains(MatchConstants.connectionLookup[city.id()][desiredCityId]);
+			if (filterConnectedCities && !alreadyConnected || !filterConnectedCities && alreadyConnected) {
 				targetCities.add(fgs.map().citiesById()[desiredCityId]);
 			}
 		}
@@ -1454,13 +1458,41 @@ class SimpleAI implements AI {
 				continue;
 			}
 			if (region.instability() >= instabilityThreshold) {
-				Print.debug("Considering region " + region.id() + " as disrupted due to instability "
-						+ region.instability());
 				newGs = newGs.increaseInstability(region.id(),
-						MatchConstants.INSTABILITY_THRESHOLD - region.instability());
+						MatchConstants.INSTABILITY_THRESHOLD);
+				Print.debug("Considering region " + region.id() + " as disrupted due to instability instable:" +
+						newGs.map().regions()[region.id()].isInstable());
 			}
 		}
 		return newGs;
+	}
+
+	public List<Action> computeBuildRailActions(GameState gs, boolean filterConnectedCities) {
+		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
+
+		gs = considerDisruptedRegionsWithInstability(gs, 2);
+
+		for (City city : gs.map().citiesById()) {
+			NAMOAPathsForCity namoaPathsForCity = findNAMOAPathsForCity(city, gs, filterConnectedCities);
+			if (namoaPathsForCity != null) {
+				// I store them for later use
+				namoaPathsForCityMap.put(city.id(), namoaPathsForCity);
+			}
+		}
+
+		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
+
+		List<Action> railActions = new ArrayList<>();
+		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
+			railActions = buildRailsAlongPath(gs, cheapestPaths);
+			if (railActions.size() > 0) {
+				Player.nbBuild += railActions.size();
+				Print.debug("Built " + railActions.size() + " rails this turn");
+			}
+			Time.debugDuration("Finished building rails along path");
+		}
+
+		return railActions;
 	}
 
 	@Override
@@ -1476,35 +1508,24 @@ class SimpleAI implements AI {
 		}
 
 		Time.debugDuration("Starting NAMOA");
-		Map<Integer, NAMOAPathsForCity> namoaPathsForCityMap = new HashMap<>();
 
-		gs = considerDisruptedRegionsWithInstability(gs, 2);
-
-		for (City city : gs.map().citiesById()) {
-			NAMOAPathsForCity namoaPathsForCity = findNAMOAPathsForCity(city, gs);
-			if (namoaPathsForCity != null) {
-				// I store them for later use
-				namoaPathsForCityMap.put(city.id(), namoaPathsForCity);
+		boolean noBuildDetected = false;
+		List<Action> buildRailActions = computeBuildRailActions(gs, true);
+		if (buildRailActions != null && !buildRailActions.isEmpty()) {
+			result.addAll(buildRailActions);
+		} else {
+			buildRailActions = computeBuildRailActions(gs, false);
+			if (buildRailActions != null && !buildRailActions.isEmpty()) {
+				result.addAll(buildRailActions);
+			} else {
+				noBuildDetected = true;
+				Print.debug("No rails built after second attempt");
 			}
 		}
 
-		List<NAMOAPath> cheapestPaths = findSortedCheapestPaths(gs, namoaPathsForCityMap);
-		if (cheapestPaths != null && !cheapestPaths.isEmpty()) {
-			List<Action> railActions;
-			if (BUILD_USING_HEAT_MAP) {
-				railActions = buildRailsAlongHeatMap(gs, cheapestPaths);
-			} else {
-				railActions = buildRailsAlongPath(gs, cheapestPaths);
-			}
-			if (railActions.size() > 0) {
-				Player.nbBuild += railActions.size();
-				Print.debug("Built " + railActions.size() + " rails this turn");
-			} else {
-				Player.nbNoBuild++;
-				Print.debug("No rails built this turn");
-			}
-			result.addAll(railActions);
-			Time.debugDuration("Finished building rails along heat map");
+		if (noBuildDetected) {
+			Player.nbNoBuild++;
+			Print.debug("No rails built this turn");
 		}
 
 		Time.debugDuration("Finished NAMOA");
