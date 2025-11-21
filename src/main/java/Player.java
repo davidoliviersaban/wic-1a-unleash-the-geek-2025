@@ -17,6 +17,8 @@ class Player {
 	public static final boolean isDebugOn = true;
 	public static int ME;
 	public static int OPP;
+	public static int nbWait = 0;
+	public static int nbDisrupt = 0;
 
 	// Magic numbers
 
@@ -311,8 +313,8 @@ class Player {
 		if (stopGame) {
 			System.out.println("Failure!");
 		} else {
-			String output = "";
-			output = actions.stream().map(Action::toString).collect(Collectors.joining(";"));
+			String output = "MESSAGE nbW: " + Player.nbWait + " nbD: " + Player.nbDisrupt + ";";
+			output += actions.stream().map(Action::toString).collect(Collectors.joining(";"));
 			System.out.println(output);
 		}
 
@@ -619,10 +621,12 @@ record Action(ActionType type, Coord coord1, Coord coord2, int id) implements Co
 	}
 
 	static Action disruptRegion(int id) {
+		Player.nbDisrupt++;
 		return new Action(ActionType.DISRUPT, null, null, id);
 	}
 
 	static Action waitAction() {
+		Player.nbWait++;
 		return new Action(ActionType.WAIT, null, null, -1);
 	}
 
